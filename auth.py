@@ -10,26 +10,24 @@ def _creds() -> Tuple[str, str]:
     try:
         u = st.secrets.get("APP_USERNAME", u)
         p = st.secrets.get("APP_PASSWORD", p)
-    except: pass
+    except Exception: pass
     return os.environ.get("APP_USERNAME", u), os.environ.get("APP_PASSWORD", p)
 
 def _h(s): return hashlib.sha256(s.encode()).hexdigest()
 
 def require_login() -> bool:
-    if st.session_state.get("ok"):
-        return True
+    if st.session_state.get("ok"): return True
 
     fails = st.session_state.get("_fc", 0)
     cd = max(0, 30 - int(time.time() - st.session_state.get("_ft", 0))) if fails >= 5 else 0
 
-    # Spacing + centered column
     for _ in range(3): st.write("")
     _, mid, _ = st.columns([1.3, 2, 1.3])
     with mid:
         with st.container(border=True):
-            st.markdown("<h2 style='text-align:center;margin:0;'>🖼️</h2>", unsafe_allow_html=True)
-            st.markdown("<h3 style='text-align:center;margin:0 0 2px;'>Thumbnail Builder Pro</h3>", unsafe_allow_html=True)
-            st.caption("<p style='text-align:center;'>Nhập thông tin để đăng nhập</p>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align:center;margin:0'>🖼️</h2>", unsafe_allow_html=True)
+            st.markdown("<h3 style='text-align:center;margin:0 0 4px'>Thumbnail Builder Pro</h3>", unsafe_allow_html=True)
+            st.caption("<p style='text-align:center;margin:0'>Đăng nhập để sử dụng</p>", unsafe_allow_html=True)
 
             username = st.text_input("Tên đăng nhập", disabled=cd > 0)
             password = st.text_input("Mật khẩu", type="password", disabled=cd > 0)
@@ -46,7 +44,7 @@ def require_login() -> bool:
                 else:
                     st.session_state["_fc"] = fails + 1
                     st.session_state["_ft"] = time.time()
-                    st.error(f"Sai thông tin ({max(0, 4 - fails)} lần thử còn)")
+                    st.error(f"Sai thông tin ({max(0, 4 - fails)} lần còn)")
     return False
 
 def logout_btn():
