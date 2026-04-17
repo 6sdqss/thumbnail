@@ -206,11 +206,15 @@ def draw_pill_with_shadow(
     shadow_opacity: int = 112,
     fill_color: Tuple[int, int, int] = (255, 255, 255),
 ) -> None:
+    """
+    Sử dụng Alpha Masking (4x) kết hợp Lanczos để viền bo cong mượt tuyệt đối,
+    khử 100% răng cưa của Pillow.
+    """
     left, top, right, bottom = pill_box
     w, h = right - left, bottom - top
     radius = h // 2
 
-    # 1. Vẽ layer bóng đổ (Shadow)
+    # 1. Layer bóng đổ (không cần khử răng cưa vì dùng GaussianBlur)
     shadow_layer = Image.new("RGBA", (canvas.width, canvas.height), (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow_layer)
     sx, sy = shadow_offset
@@ -222,24 +226,24 @@ def draw_pill_with_shadow(
     shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur))
     canvas.alpha_composite(shadow_layer)
 
-    # 2. Vẽ ô Pill trắng chống răng cưa bằng Oversampling (vẽ 3x rồi thu nhỏ Lanczos)
-    scale = 3
-    pill_w_hr, pill_h_hr = w * scale, h * scale
-    pill_hr = Image.new("RGBA", (pill_w_hr, pill_h_hr), (0, 0, 0, 0))
-    pd = ImageDraw.Draw(pill_hr)
+    # 2. Khử răng cưa tuyệt đối cho viền ô Pill bằng Alpha Masking (4x)
+    scale = 4
+    mask_w, mask_h = w * scale, h * scale
     
-    pd.rounded_rectangle(
-        [0, 0, pill_w_hr, pill_h_hr],
-        radius=radius * scale,
-        fill=(*fill_color, 255),
-    )
+    # Vẽ một mặt nạ (Mask) trắng đen to gấp 4 lần
+    mask_hr = Image.new("L", (mask_w, mask_h), 0)
+    md = ImageDraw.Draw(mask_hr)
+    md.rounded_rectangle([0, 0, mask_w, mask_h], radius=radius * scale, fill=255)
     
-    # Resize mịn màng bằng LANCZOS để khử hoàn toàn răng cưa
-    pill_lr = pill_hr.resize((w, h), Image.LANCZOS)
+    # Thu nhỏ mặt nạ bằng Lanczos để lấy phần viền siêu mượt
+    mask_lr = mask_hr.resize((w, h), Image.LANCZOS)
     
-    # Paste lên canvas
-    canvas.paste(pill_lr, (left, top), pill_lr)
-
+    # Tạo ô Pill đúng màu và áp mặt nạ mượt vào kênh Alpha
+    pill_layer = Image.new("RGBA", (w, h), (*fill_color, 255))
+    pill_layer.putalpha(mask_lr)
+    
+    # Dán ô Pill hoàn hảo lên canvas (dùng chính nó làm mask để hoà trộn đúng)
+    canvas.paste(pill_layer, (left, top), pill_layer)
 
 # ============ CẤU HÌNH CỨNG THEO YÊU CẦU ============
 @dataclass
@@ -279,11 +283,13 @@ def build_thumbnail(
     W = H = CANVAS_SIZE
     info: dict = {}
 
+    # 1. Chuẩn bị hình nền
     if config.show_background:
         bg = background.convert("RGBA").resize((W, H), Image.LANCZOS)
     else:
         bg = Image.new("RGBA", (W, H), (255, 255, 255, 255))
 
+    # 2. Xử lý ảnh sản phẩm (Tách nền, Căn giữa, Zoom)
     prod = product_image.convert("RGBA")
     if config.remove_bg_mode == "white":
         prod = remove_white_background(prod, tolerance=config.white_tolerance)
@@ -307,6 +313,7 @@ def build_thumbnail(
     py = area_top + (area_h - fitted.height) // 2
     bg.paste(fitted, (px, py), fitted)
 
+    # 3. Chuẩn bị vẽ Text và Pill
     draw = ImageDraw.Draw(bg)
     font = load_font(config.font_size, config.font_weight)
     
@@ -316,15 +323,18 @@ def build_thumbnail(
     y_positions = [config.pill1_top, config.pill1_top + config.pill_height + config.pill2_gap]
     sizes_used: List[float] = []
 
+    # === ĐÂY LÀ VÒNG LẶP QUAN TRỌNG ĐÃ ĐƯỢC CHỈNH SỬA ===
     for i, txt in enumerate(texts):
         if not txt:
             continue
             
+        # A. Đo kích thước của chữ để tính toán độ rộng ô trắng
         bbox = draw.textbbox((0, 0), txt, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
         y_offset = bbox[1]
 
+        # B. Tính toạ độ khung ô trắng (Pill Box)
         current_pill_width = text_w + (config.text_padding * 2)
         pill_box = (
             config.pill_left, 
@@ -333,19 +343,23 @@ def build_thumbnail(
             y_positions[i] + config.pill_height
         )
 
+        # C. VẼ Ô TRẮNG BO GÓC SIÊU MƯỢT TRƯỚC (Dùng Alpha Masking)
         draw_pill_with_shadow(
-            bg, pill_box,
+            canvas=bg,
+            pill_box=pill_box,
             shadow_offset=(config.shadow_offset_x, config.shadow_offset_y),
             shadow_blur=config.shadow_blur,
             shadow_opacity=config.shadow_opacity
         )
 
+        # D. VẼ CHỮ ĐÈ LÊN TRÊN Ô TRẮNG (Canh giữa tuyệt đối)
         text_x = config.pill_left + config.text_padding
         text_y = y_positions[i] + (config.pill_height - text_h) // 2 - y_offset
         draw.text((text_x, text_y), txt, font=font, fill=config.text_color)
         
         sizes_used.append(config.font_size)
 
+    # 4. Đóng gói thông tin xuất ra
     info["font_sizes_used"] = [round(s, 2) for s in sizes_used]
     info["text1"] = t1
     info["text2"] = t2
