@@ -27,7 +27,7 @@ DEFAULT_TOP_MARGIN = 155
 DEFAULT_BOTTOM_MARGIN = 55    
 DEFAULT_SIDE_PADDING = 40     
 DEFAULT_FONT_SIZE = 20.4
-DEFAULT_TEXT_PADDING = 25     
+DEFAULT_TEXT_PADDING = 20     
 
 # ============ SMART FIT ============
 def _content_bbox(img: Image.Image, alpha_threshold: int = 10) -> Optional[Tuple[int, int, int, int]]:
@@ -256,17 +256,17 @@ class ThumbnailConfig:
     font_size: float = 20.4
     font_weight: int = 800
     text_color: Tuple[int, int, int] = (0, 0, 0)
-    text_padding: int = 25
+    text_padding: int = 20
     remove_bg_mode: str = "none"
     white_tolerance: int = 18
     show_background: bool = True
     center_mode: str = "centroid"
     product_scale: float = 1.0
-    pill_left: int = 20    # Update cứng từ ảnh (20)
+    pill_left: int = 20    
     pill_right: int = 300
     pill_height: int = 49
-    pill1_top: int = 8
-    pill2_gap: int = 11
+    pill1_top: int = 14
+    pill2_gap: int = 14
     # Bóng đổ update theo ảnh mới cho gắt, cứng
     shadow_offset_x: int = 2
     shadow_offset_y: int = 4
