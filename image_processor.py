@@ -8,8 +8,8 @@ Tính năng:
 - remove_white_background: tách nền trắng bằng flood-fill (không cần AI)
 - remove_background_ai: tách nền bằng rembg (tuỳ chọn)
 - draw_pill_with_shadow: tự vẽ ô pill trắng có bóng đổ mềm (không dùng asset khung)
-- build_thumbnail: ghép thumbnail 600x600 đúng layout mẫu
-- auto_fit_text: text tự co giãn vừa pill
+- build_thumbnail: ghép thumbnail 600x600 đúng layout mẫu. Hỗ trợ ô trắng (pill) tự co giãn theo độ dài chữ.
+- auto_fit_text: text tự co giãn vừa pill (được giữ lại để tương thích ngược)
 """
 from __future__ import annotations
 
@@ -299,11 +299,7 @@ def auto_fit_text(
     side_padding: int = 22,
 ) -> float:
     """
-    Vẽ text vào pill.
-    - Text ngắn: giữ nguyên base_size
-    - Text dài: tự shrink cho vừa chiều ngang pill
-    - Căn trái + căn giữa dọc (dựa trên visual bbox, bù offset Montserrat)
-    Trả về font size thực tế đã dùng.
+    Vẽ text vào pill. (Giữ lại để đảm bảo không lỗi hàm nếu có file khác gọi tới)
     """
     if not text:
         return base_size
@@ -335,8 +331,6 @@ def auto_fit_text(
 
 # ============ CẤU HÌNH ============
 @dataclass
-# Trong image_processor.py
-@dataclass
 class ThumbnailConfig:
     top_margin: int = 155
     bottom_margin: int = 55
@@ -351,7 +345,7 @@ class ThumbnailConfig:
     center_mode: str = "centroid"
     product_scale: float = 1.0
     pill_left: int = 8
-    pill_right: int = 300
+    pill_right: int = 300 # Mặc định cũ, giữ lại để tương thích ngược
     pill_height: int = 49
     pill1_top: int = 8
     pill2_gap: int = 11
@@ -376,7 +370,7 @@ def build_thumbnail(
     Layer (từ dưới lên):
       1. Background
       2. Sản phẩm (smart-fit + tách nền tuỳ chọn)
-      3. Pill shadow + pill trắng + text (1 hoặc 2 pill)
+      3. Pill shadow + pill trắng + text (1 hoặc 2 pill tự co giãn theo text)
 
     Trả về (image, info).
     """
@@ -414,63 +408,54 @@ def build_thumbnail(
     py = area_top + (area_h - fitted.height) // 2
     bg.paste(fitted, (px, py), fitted)
 
-    # 3. Pill + text
+    # 3. Pill + text (Tự động co giãn theo chiều dài chữ)
+    draw = ImageDraw.Draw(bg)
+    font = load_font(config.font_size, config.font_weight)
+    
     t1 = (text1 or "").strip()
     t2 = (text2 or "").strip()
-
-    pill1 = (
-        config.pill_left,
-        config.pill1_top,
-        config.pill_right,
-        config.pill1_top + config.pill_height,
-    )
-    pill2_top = config.pill1_top + config.pill_height + config.pill2_gap
-    pill2 = (
-        config.pill_left,
-        pill2_top,
-        config.pill_right,
-        pill2_top + config.pill_height,
-    )
-
+    texts = [t1, t2]
+    y_positions = [config.pill1_top, config.pill1_top + config.pill_height + config.pill2_gap]
     sizes_used: List[float] = []
 
-    # Chế độ auto: chỉ vẽ pill có text
-    if t1:
-        draw_pill_with_shadow(
-            bg, pill1,
-            shadow_offset=(config.shadow_offset_x, config.shadow_offset_y),
-            shadow_blur=config.shadow_blur,
-            shadow_opacity=config.shadow_opacity,
-        )
-        s = auto_fit_text(
-            bg, t1, pill1,
-            base_size=config.font_size,
-            color=config.text_color,
-            weight=config.font_weight,
-            side_padding=config.text_padding,
-        )
-        sizes_used.append(s)
+    for i, txt in enumerate(texts):
+        if not txt:
+            continue
+            
+        # Đo kích thước chữ thực tế
+        bbox = draw.textbbox((0, 0), txt, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        y_offset = bbox[1]
 
-    if t2:
+        # Tính toán độ rộng ô: lề trái + độ dài chữ + padding 2 bên
+        current_pill_width = text_w + (config.text_padding * 2)
+        pill_box = (
+            config.pill_left, 
+            y_positions[i], 
+            config.pill_left + current_pill_width, 
+            y_positions[i] + config.pill_height
+        )
+
+        # Vẽ bóng và ô trắng theo kích thước co giãn
         draw_pill_with_shadow(
-            bg, pill2,
+            bg, pill_box,
             shadow_offset=(config.shadow_offset_x, config.shadow_offset_y),
             shadow_blur=config.shadow_blur,
-            shadow_opacity=config.shadow_opacity,
+            shadow_opacity=config.shadow_opacity
         )
-        s = auto_fit_text(
-            bg, t2, pill2,
-            base_size=config.font_size,
-            color=config.text_color,
-            weight=config.font_weight,
-            side_padding=config.text_padding,
-        )
-        sizes_used.append(s)
+
+        # Vẽ chữ vào giữa ô (Căn giữa dọc: bù y_offset để ký tự nằm chính giữa ô pill)
+        text_x = config.pill_left + config.text_padding
+        text_y = y_positions[i] + (config.pill_height - text_h) // 2 - y_offset
+        draw.text((text_x, text_y), txt, font=font, fill=config.text_color)
+        
+        sizes_used.append(config.font_size)
 
     info["font_sizes_used"] = [round(s, 2) for s in sizes_used]
     info["text1"] = t1
     info["text2"] = t2
-    info["any_shrunk"] = any(s < config.font_size - 0.01 for s in sizes_used)
+    info["any_shrunk"] = False
 
     return bg.convert("RGB"), info
 
