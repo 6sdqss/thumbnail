@@ -1,0 +1,56 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ===== Virtual env =====
+venv/
+env/
+ENV/
+.venv/
+.env
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===== Streamlit =====
+# TUYỆT ĐỐI KHÔNG commit secrets thật lên GitHub
+.streamlit/secrets.toml
+
+# ===== Cache / Temp =====
+.cache/
+*.log
+*.tmp
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ===== Model rembg (tự tải khi lần đầu dùng) =====
+~/.u2net/
+*.onnx
+
+# ===== Output cá nhân =====
+output/
+exports/
+tmp/
