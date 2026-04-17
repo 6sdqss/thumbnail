@@ -37,8 +37,8 @@ from auth import require_login, logout_btn
 PILL_LEFT     = 20
 PILL_RIGHT    = 300
 PILL_HEIGHT   = 49
-PILL1_TOP     = 8
-PILL2_GAP     = 11
+PILL1_TOP     = 14    # Khung 1 cách mép trên 14px
+PILL2_GAP     = 14    # Khung 2 cách mép trên 77px (14 + 49 + 14)
 
 # Điều chỉnh bóng (Shadow) cho gắt và sát với hình mẫu
 SHADOW_X      = 2
@@ -46,7 +46,7 @@ SHADOW_Y      = 4
 SHADOW_BLUR   = 2
 SHADOW_OP     = 45
 
-TEXT_PADDING  = 25
+TEXT_PADDING  = 20    # Chữ cách mép trái 40px (PILL_LEFT 20 + PADDING 20 = 40)
 FONT_WEIGHT   = 800
 WHITE_TOL     = 18
 
@@ -55,7 +55,7 @@ MAX_UPLOAD_MB  = 20        # ảnh > 20MB sẽ bị từ chối
 MIN_SRC_DIM    = 400       # ảnh < 400px sẽ cảnh báo (upscale sẽ vỡ)
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
 
-APP_VERSION = "7.1"
+APP_VERSION = "7.2"
 
 
 # ══════════════════════════════════════════════════════
@@ -907,29 +907,30 @@ with tab_export:
                                     "sizes": "", "fonts": "", "shrunk": str(e)[:50],
                                     "custom_config": "no"})
 
-            # CMS files
-            if include_csv and cms:
-                cdf = pd.DataFrame(cms)
-                zf.writestr("cms.csv",
-                            cdf.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
-                xb = io.BytesIO()
-                with pd.ExcelWriter(xb, engine="openpyxl") as w:
-                    cdf.to_excel(w, index=False, sheet_name="CMS")
-                zf.writestr("cms.xlsx", xb.getvalue())
+                # MÃ ĐÃ ĐƯỢC THỤT LỀ VÀO BÊN TRONG VÒNG WITH ZIPFILE CỦA PYTHON (FIX LỖI CRASH)
+                # CMS files
+                if include_csv and cms:
+                    cdf = pd.DataFrame(cms)
+                    zf.writestr("cms.csv",
+                                cdf.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
+                    xb = io.BytesIO()
+                    with pd.ExcelWriter(xb, engine="openpyxl") as w:
+                        cdf.to_excel(w, index=False, sheet_name="CMS")
+                    zf.writestr("cms.xlsx", xb.getvalue())
 
-            # Config backup
-            zf.writestr("config_snapshot.json",
-                       json.dumps(_export_config(), indent=2, ensure_ascii=False))
+                # Config backup
+                zf.writestr("config_snapshot.json",
+                           json.dumps(_export_config(), indent=2, ensure_ascii=False))
 
-            # README
-            zf.writestr("README.txt",
-                       f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                       f"App version: {APP_VERSION}\n"
-                       f"Items: {len(dfex)}\n"
-                       f"Sizes: {all_sizes}\n"
-                       f"Format: {fmt_low.upper()}\n"
-                       f"Custom config: {n_ov}\n"
-                       f"Errors: {len(errors)}\n")
+                # README
+                zf.writestr("README.txt",
+                           f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                           f"App version: {APP_VERSION}\n"
+                           f"Items: {len(dfex)}\n"
+                           f"Sizes: {all_sizes}\n"
+                           f"Format: {fmt_low.upper()}\n"
+                           f"Custom config: {n_ov}\n"
+                           f"Errors: {len(errors)}\n")
 
             prog.empty()
             elapsed = time.time() - t0
