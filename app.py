@@ -14,6 +14,7 @@ TÍNH NĂNG:
   ✓ Export PNG / JPG / WebP
   ✓ Bulk edit text trong bảng
   ✓ Xử lý lỗi triệt để - không crash
+  ✓ Thêm cột Link CMS tự động
 """
 from __future__ import annotations
 import io, json, time, zipfile
@@ -38,10 +39,13 @@ PILL_RIGHT    = 300
 PILL_HEIGHT   = 49
 PILL1_TOP     = 8
 PILL2_GAP     = 11
-SHADOW_X      = 3
-SHADOW_Y      = 5
-SHADOW_BLUR   = 5
-SHADOW_OP     = 112
+
+# Điều chỉnh bóng (Shadow) cho gắt và sát với hình mẫu
+SHADOW_X      = 2
+SHADOW_Y      = 4
+SHADOW_BLUR   = 2
+SHADOW_OP     = 45
+
 TEXT_PADDING  = 25
 FONT_WEIGHT   = 800
 WHITE_TOL     = 18
@@ -51,7 +55,7 @@ MAX_UPLOAD_MB  = 20        # ảnh > 20MB sẽ bị từ chối
 MIN_SRC_DIM    = 400       # ảnh < 400px sẽ cảnh báo (upscale sẽ vỡ)
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
 
-APP_VERSION = "7.0"
+APP_VERSION = "7.1"
 
 
 # ══════════════════════════════════════════════════════
@@ -883,7 +887,9 @@ with tab_export:
                         has_ov = any(k for k in st.session_state.get("overrides", {}).get(pid, {})
                                     if k not in ("t1","t2"))
                         cms.append({
-                            "id": pid, "text1": row["text1"], "text2": row["text2"],
+                            "id": pid, 
+                            "cms_link": f"https://cms.thegioididong.com/product/Edit?productID={pid}",
+                            "text1": row["text1"], "text2": row["text2"],
                             "filename": f"{sid}.{fmt_low}",
                             "sizes": ";".join(str(s) for s in all_sizes),
                             "fonts": ";".join(str(s) for s in info["font_sizes_used"]),
@@ -894,34 +900,36 @@ with tab_export:
                         done_ops += len(all_sizes)
                         prog.progress(done_ops / total_ops, text=f"Lỗi: {pid}")
                         errors.append(f"{pid}: {str(e)[:100]}")
-                        cms.append({"id": pid, "text1": row.get("text1",""),
+                        cms.append({"id": pid, 
+                                    "cms_link": f"https://cms.thegioididong.com/product/Edit?productID={pid}",
+                                    "text1": row.get("text1",""),
                                     "text2": row.get("text2",""), "filename": "ERROR",
                                     "sizes": "", "fonts": "", "shrunk": str(e)[:50],
                                     "custom_config": "no"})
 
-                # CMS files
-                if include_csv and cms:
-                    cdf = pd.DataFrame(cms)
-                    zf.writestr("cms.csv",
-                                cdf.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
-                    xb = io.BytesIO()
-                    with pd.ExcelWriter(xb, engine="openpyxl") as w:
-                        cdf.to_excel(w, index=False, sheet_name="CMS")
-                    zf.writestr("cms.xlsx", xb.getvalue())
+            # CMS files
+            if include_csv and cms:
+                cdf = pd.DataFrame(cms)
+                zf.writestr("cms.csv",
+                            cdf.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
+                xb = io.BytesIO()
+                with pd.ExcelWriter(xb, engine="openpyxl") as w:
+                    cdf.to_excel(w, index=False, sheet_name="CMS")
+                zf.writestr("cms.xlsx", xb.getvalue())
 
-                # Config backup
-                zf.writestr("config_snapshot.json",
-                           json.dumps(_export_config(), indent=2, ensure_ascii=False))
+            # Config backup
+            zf.writestr("config_snapshot.json",
+                       json.dumps(_export_config(), indent=2, ensure_ascii=False))
 
-                # README
-                zf.writestr("README.txt",
-                           f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                           f"App version: {APP_VERSION}\n"
-                           f"Items: {len(dfex)}\n"
-                           f"Sizes: {all_sizes}\n"
-                           f"Format: {fmt_low.upper()}\n"
-                           f"Custom config: {n_ov}\n"
-                           f"Errors: {len(errors)}\n")
+            # README
+            zf.writestr("README.txt",
+                       f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                       f"App version: {APP_VERSION}\n"
+                       f"Items: {len(dfex)}\n"
+                       f"Sizes: {all_sizes}\n"
+                       f"Format: {fmt_low.upper()}\n"
+                       f"Custom config: {n_ov}\n"
+                       f"Errors: {len(errors)}\n")
 
             prog.empty()
             elapsed = time.time() - t0
