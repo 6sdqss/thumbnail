@@ -220,10 +220,6 @@ def build_config_from_sidebar() -> Tuple[ThumbnailConfig, dict]:
                 9.0, 30.0, float(DEFAULT_FONT_SIZE), step=0.1,
                 help="Text dài sẽ tự shrink. Text ngắn giữ nguyên size này.",
             )
-            text_pad = st.slider(
-                "Text thụt vào pill (px)", 10, 50, 25,
-                help="Khoảng cách từ mép pill đến chữ. Mặc định 25.",
-            )
             weight_label = st.select_slider(
                 "Độ đậm",
                 options=["Regular (400)", "Medium (500)", "SemiBold (600)", "Bold (700)", "ExtraBold (800)", "Black (900)"],
@@ -248,6 +244,8 @@ def build_config_from_sidebar() -> Tuple[ThumbnailConfig, dict]:
             sh_y = st.slider("Shadow Y", -10, 15, 5)
             sh_blur = st.slider("Shadow Blur", 0, 30, 12)
             sh_op = st.slider("Shadow Opacity", 0, 255, 85)
+            
+            pill_right = 300 # Giữ lại biến ẩn này để tránh lỗi config bên dưới
 
         with st.expander("🪄 Tách nền trắng (tuỳ chọn)", expanded=False):
             bg_mode_label = st.radio(
