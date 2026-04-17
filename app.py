@@ -13,8 +13,27 @@ from auth import logout_button, require_login
 from image_processor import (
     CANVAS_SIZE, DEFAULT_FONT_SIZE, ThumbnailConfig,
     build_thumbnail, pil_to_bytes, sanitize_filename,
-    generate_default_background,
 )
+
+# Fallback background nếu thiếu file assets/background.png
+def generate_default_background(size=600):
+    from PIL import ImageDraw, ImageFilter
+    import numpy as np
+    bg = Image.new("RGBA", (size, size), (255, 255, 255, 255))
+    arr = np.array(bg).astype(np.float32)
+    horizon_y = int(size * 0.78)
+    shadow = np.linspace(1.0, 0.93, size - horizon_y)
+    for c in range(3):
+        arr[horizon_y:, :, c] *= shadow[:, None]
+    arr = np.clip(arr, 0, 255).astype(np.uint8)
+    bg = Image.fromarray(arr, "RGBA")
+    sl = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sl)
+    cx, cy = size // 2, int(size * 0.82)
+    sd.ellipse([cx - 210, cy - 24, cx + 210, cy + 24], fill=(0, 0, 0, 35))
+    sl = sl.filter(ImageFilter.GaussianBlur(radius=8))
+    bg.alpha_composite(sl)
+    return bg
 
 # ═══════ PAGE CONFIG ═══════
 st.set_page_config(
