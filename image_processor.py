@@ -335,30 +335,31 @@ def auto_fit_text(
 
 # ============ CẤU HÌNH ============
 @dataclass
+# Trong image_processor.py
+@dataclass
 class ThumbnailConfig:
-    top_margin: int = DEFAULT_TOP_MARGIN           # 155: sp dưới pill
-    bottom_margin: int = DEFAULT_BOTTOM_MARGIN     # 55: không sát đáy
-    side_padding: int = DEFAULT_SIDE_PADDING       # 40: không sát viền trái/phải
-    font_size: float = DEFAULT_FONT_SIZE
-    font_weight: int = 800                         # ExtraBold giống mẫu
+    top_margin: int = 155
+    bottom_margin: int = 55
+    side_padding: int = 40
+    font_size: float = 20.4
+    font_weight: int = 800
     text_color: Tuple[int, int, int] = (0, 0, 0)
-    text_padding: int = DEFAULT_TEXT_PADDING       # 25: text thụt 25px
-    remove_bg_mode: str = "none"                   # "none" | "white" | "ai"
+    text_padding: int = 25
+    remove_bg_mode: str = "none"
     white_tolerance: int = 18
     show_background: bool = True
-    center_mode: str = "centroid"                  # "bbox" | "centroid"
-    product_scale: float = 1.0                     # zoom thủ công (0.5-1.3)
-    # Layout 2 pill
-    pill_left: int = PILL_LEFT
-    pill_right: int = PILL_RIGHT
-    pill_height: int = PILL_HEIGHT
-    pill1_top: int = PILL1_TOP
+    center_mode: str = "centroid"
+    product_scale: float = 1.0
+    pill_left: int = 8
+    pill_right: int = 300
+    pill_height: int = 49
+    pill1_top: int = 8
     pill2_gap: int = 11
-    # Shadow
-    shadow_offset_x: int = 2
-    shadow_offset_y: int = 3
-    shadow_blur: int = 6
-    shadow_opacity: int = 110
+    # Thông số bóng đổ đã được tinh chỉnh theo mẫu
+    shadow_offset_x: int = 3
+    shadow_offset_y: int = 5
+    shadow_blur: int = 12  # Tăng để bóng mịn và lan tỏa rộng hơn
+    shadow_opacity: int = 85 # Giảm để bóng nhẹ nhàng, không bị đen gắt
 
 
 # ============ BUILD THUMBNAIL ============
