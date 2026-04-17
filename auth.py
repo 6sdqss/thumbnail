@@ -1,130 +1,84 @@
 """
-auth.py
-=======
-Xác thực đăng nhập bằng username + password.
-
-Thứ tự đọc credential:
-  1. st.secrets["APP_USERNAME"] / st.secrets["APP_PASSWORD"]  (Streamlit Cloud)
-  2. os.environ["APP_USERNAME"] / os.environ["APP_PASSWORD"]   (local/env)
-  3. Mặc định: username=ducpro, password=234766
-
-Credential KHÔNG hard-code ở app.py → push code public cũng không lộ.
+auth.py — Xác thực đăng nhập
 """
 from __future__ import annotations
-
-import hashlib
-import hmac
-import os
-import time
+import hashlib, hmac, os, time
 from typing import Optional, Tuple
-
 import streamlit as st
 
-# Mặc định (dùng khi chưa cấu hình secrets/env)
 _DEFAULT_USERNAME = "ducpro"
 _DEFAULT_PASSWORD = "234766"
 
-
 def _get_credentials() -> Tuple[str, str]:
-    """Lấy cặp (username, password) đã cấu hình."""
     user, pwd = _DEFAULT_USERNAME, _DEFAULT_PASSWORD
     try:
-        if "APP_USERNAME" in st.secrets:
-            user = str(st.secrets["APP_USERNAME"])
-        if "APP_PASSWORD" in st.secrets:
-            pwd = str(st.secrets["APP_PASSWORD"])
-    except Exception:
-        pass
+        if "APP_USERNAME" in st.secrets: user = str(st.secrets["APP_USERNAME"])
+        if "APP_PASSWORD" in st.secrets: pwd = str(st.secrets["APP_PASSWORD"])
+    except Exception: pass
     user = os.environ.get("APP_USERNAME", user)
     pwd = os.environ.get("APP_PASSWORD", pwd)
     return user, pwd
 
-
-def _hash(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
-
-
-def _secure_eq(a: str, b: str) -> bool:
-    return hmac.compare_digest(_hash(a), _hash(b))
-
+def _hash(s: str) -> str: return hashlib.sha256(s.encode()).hexdigest()
+def _eq(a: str, b: str) -> bool: return hmac.compare_digest(_hash(a), _hash(b))
 
 def require_login() -> bool:
-    """Render form đăng nhập. Trả True nếu đã login, False nếu chưa."""
-    if st.session_state.get("authenticated"):
-        return True
+    if st.session_state.get("authenticated"): return True
+    fails = st.session_state.get("_f", 0)
+    last = st.session_state.get("_lt", 0)
+    cd = max(0, 30 - int(time.time() - last)) if fails >= 5 else 0
 
-    fail_count = st.session_state.get("login_fail_count", 0)
-    last_fail = st.session_state.get("login_last_fail", 0)
-    cooldown_left = 0
-    if fail_count >= 5:
-        cooldown_left = max(0, 30 - int(time.time() - last_fail))
+    st.markdown("""
+    <style>
+      .login-wrap{display:flex;align-items:center;justify-content:center;min-height:80vh;}
+      .login-card{background:#fff;border-radius:20px;padding:48px 40px 36px;
+        width:380px;max-width:92vw;box-shadow:0 8px 40px rgba(79,70,229,.12),0 1px 3px rgba(0,0,0,.06);
+        text-align:center;position:relative;overflow:hidden;}
+      .login-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;
+        background:linear-gradient(90deg,#4f46e5,#7c3aed,#ec4899);}
+      .login-icon{font-size:48px;margin-bottom:12px;}
+      .login-title{font-size:22px;font-weight:800;color:#1e1b4b;margin:0 0 4px;}
+      .login-sub{font-size:13px;color:#6b7280;margin:0 0 28px;}
+    </style>
+    """, unsafe_allow_html=True)
 
-    st.markdown(
-        """
-        <div style='text-align:center; padding:30px 0 10px;'>
-          <div style='font-size:60px; margin-bottom:4px;'>🖼️</div>
-          <h1 style='margin:0; font-weight:800; letter-spacing:-0.8px;
-                     background: linear-gradient(135deg,#4f46e5,#7c3aed);
-                     -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>
-            Thumbnail Builder Pro
-          </h1>
-          <p style='color:#64748b; margin-top:6px; font-size:15px;'>
-            Tạo thumbnail sản phẩm 600×600 chuyên nghiệp — Smart-fit · Auto-shrink text
-          </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    st.markdown("<div class='login-wrap'>", unsafe_allow_html=True)
     _, col, _ = st.columns([1, 2, 1])
     with col:
-        with st.container(border=True):
-            st.markdown("#### 🔐 Đăng nhập")
+        st.markdown("""
+        <div class='login-card'>
+          <div class='login-icon'>🖼️</div>
+          <div class='login-title'>Thumbnail Builder Pro</div>
+          <div class='login-sub'>Đăng nhập để sử dụng công cụ</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-            username = st.text_input(
-                "Tên đăng nhập",
-                placeholder="Nhập username",
-                disabled=cooldown_left > 0,
-            )
-            password = st.text_input(
-                "Mật khẩu",
-                type="password",
-                placeholder="Nhập mật khẩu",
-                disabled=cooldown_left > 0,
-            )
+        username = st.text_input("👤 Tên đăng nhập", placeholder="username", disabled=cd > 0, label_visibility="collapsed")
+        password = st.text_input("🔒 Mật khẩu", type="password", placeholder="password", disabled=cd > 0, label_visibility="collapsed")
 
-            if cooldown_left > 0:
-                st.warning(f"⏳ Quá nhiều lần sai. Vui lòng đợi {cooldown_left} giây.")
+        if cd > 0:
+            st.warning(f"Quá nhiều lần sai. Đợi {cd}s.")
+            return False
+
+        if st.button("Đăng nhập", type="primary", use_container_width=True):
+            u, p = _get_credentials()
+            if _eq(username.strip(), u) and _eq(password, p):
+                st.session_state["authenticated"] = True
+                st.session_state["login_user"] = u
+                st.session_state["_f"] = 0
+                st.rerun()
+            else:
+                st.session_state["_f"] = fails + 1
+                st.session_state["_lt"] = time.time()
+                st.error(f"Sai tên hoặc mật khẩu. Còn {max(0,5-fails-1)} lần thử.")
                 return False
-
-            if st.button("Đăng nhập", type="primary", use_container_width=True):
-                cfg_user, cfg_pwd = _get_credentials()
-                if _secure_eq(username.strip(), cfg_user) and _secure_eq(password, cfg_pwd):
-                    st.session_state["authenticated"] = True
-                    st.session_state["login_user"] = cfg_user
-                    st.session_state["login_fail_count"] = 0
-                    st.rerun()
-                else:
-                    st.session_state["login_fail_count"] = fail_count + 1
-                    st.session_state["login_last_fail"] = time.time()
-                    left = max(0, 5 - st.session_state["login_fail_count"])
-                    st.error(f"❌ Sai tên hoặc mật khẩu. Còn {left} lần thử.")
-                    return False
-
-            st.caption(
-                "💡 Credentials cấu hình qua `st.secrets` hoặc env "
-                "`APP_USERNAME` / `APP_PASSWORD`."
-            )
-
+    st.markdown("</div>", unsafe_allow_html=True)
     return False
 
-
-def logout_button(placement: Optional[object] = None) -> None:
-    target = placement or st
+def logout_button(placement=None):
+    t = placement or st
     user = st.session_state.get("login_user", "")
-    if user:
-        target.markdown(f"👤 Đang đăng nhập: **{user}**")
-    if target.button("🚪 Đăng xuất", use_container_width=True):
-        for k in ("authenticated", "login_user", "login_fail_count", "login_last_fail"):
-            st.session_state.pop(k, None)
+    if user: t.caption(f"👤 {user}")
+    if t.button("Đăng xuất", use_container_width=True):
+        for k in ("authenticated","login_user","_f","_lt"): st.session_state.pop(k, None)
         st.rerun()
