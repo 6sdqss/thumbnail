@@ -236,18 +236,18 @@ def build_config_from_sidebar() -> Tuple[ThumbnailConfig, dict]:
             color_hex = st.color_picker("Màu chữ", "#000000")
             text_color = tuple(int(color_hex[i:i+2], 16) for i in (1, 3, 5))
 
-        with st.expander("🎨 Pill (khung text)", expanded=False):
-            pill_left = st.slider("Pill left (px)", 0, 100, 8)
-            pill_right = st.slider("Pill right (px)", 150, 500, 300)
-            pill_height = st.slider("Pill height (px)", 30, 80, 49)
-            pill1_top = st.slider("Pill 1 top (px)", 0, 100, 8)
-            pill2_gap = st.slider("Khoảng cách giữa 2 pill (px)", 0, 40, 11)
+        with st.expander("🎨 Pill (khung text)", expanded=True):
+            pill_left = st.slider("Vị trí lề trái (px)", 0, 100, 8)
+            pill_height = st.slider("Chiều cao ô (px)", 30, 80, 49)
+            pill1_top = st.slider("Cách mép trên (px)", 0, 100, 8)
+            pill2_gap = st.slider("Khoảng cách 2 ô (px)", 0, 40, 11)
+            text_pad = st.slider("Độ rộng lề chữ (Padding)", 10, 60, 25) # Đây là thông số quyết định độ dài dư ra của ô trắng
             
-            st.markdown("**Shadow (Thông số đã tối ưu)**")
-            sh_x = st.slider("Shadow X offset", -10, 10, 3)
-            sh_y = st.slider("Shadow Y offset", -10, 15, 5)
-            sh_blur = st.slider("Shadow blur", 0, 30, 12) # Tăng giới hạn lên 30 để tùy chỉnh linh hoạt
-            sh_op = st.slider("Shadow opacity", 0, 255, 85)
+            st.markdown("**Bóng đổ (Đã lưu thông số tối ưu)**")
+            sh_x = st.slider("Shadow X", -10, 10, 3)
+            sh_y = st.slider("Shadow Y", -10, 15, 5)
+            sh_blur = st.slider("Shadow Blur", 0, 30, 12)
+            sh_op = st.slider("Shadow Opacity", 0, 255, 85)
 
         with st.expander("🪄 Tách nền trắng (tuỳ chọn)", expanded=False):
             bg_mode_label = st.radio(
