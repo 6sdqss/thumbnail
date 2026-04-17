@@ -201,9 +201,9 @@ def load_font(size: float, weight: int = 700) -> ImageFont.FreeTypeFont:
 def draw_pill_with_shadow(
     canvas: Image.Image,
     pill_box: Tuple[int, int, int, int],
-    shadow_offset: Tuple[int, int] = (3, 5),
-    shadow_blur: int = 5,
-    shadow_opacity: int = 112,
+    shadow_offset: Tuple[int, int] = (2, 4),
+    shadow_blur: int = 2,
+    shadow_opacity: int = 45,
     fill_color: Tuple[int, int, int] = (255, 255, 255),
 ) -> None:
     """
@@ -214,7 +214,7 @@ def draw_pill_with_shadow(
     w, h = right - left, bottom - top
     radius = h // 2
 
-    # 1. Layer bóng đổ (không cần khử răng cưa vì dùng GaussianBlur)
+    # 1. Layer bóng đổ
     shadow_layer = Image.new("RGBA", (canvas.width, canvas.height), (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow_layer)
     sx, sy = shadow_offset
@@ -223,7 +223,9 @@ def draw_pill_with_shadow(
         radius=radius,
         fill=(0, 0, 0, shadow_opacity),
     )
-    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur))
+    # Cần if > 0 để tránh crash nếu set blur = 0
+    if shadow_blur > 0:
+        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur))
     canvas.alpha_composite(shadow_layer)
 
     # 2. Khử răng cưa tuyệt đối cho viền ô Pill bằng Alpha Masking (4x)
@@ -265,11 +267,11 @@ class ThumbnailConfig:
     pill_height: int = 49
     pill1_top: int = 8
     pill2_gap: int = 11
-    # Bóng đổ update theo ảnh
-    shadow_offset_x: int = 3
-    shadow_offset_y: int = 5
-    shadow_blur: int = 5
-    shadow_opacity: int = 112
+    # Bóng đổ update theo ảnh mới cho gắt, cứng
+    shadow_offset_x: int = 2
+    shadow_offset_y: int = 4
+    shadow_blur: int = 2
+    shadow_opacity: int = 45
 
 
 # ============ BUILD THUMBNAIL ============
