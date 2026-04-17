@@ -242,12 +242,12 @@ def build_config_from_sidebar() -> Tuple[ThumbnailConfig, dict]:
             pill_height = st.slider("Pill height (px)", 30, 80, 49)
             pill1_top = st.slider("Pill 1 top (px)", 0, 100, 8)
             pill2_gap = st.slider("Khoảng cách giữa 2 pill (px)", 0, 40, 11)
-
-            st.markdown("**Shadow**")
-            sh_x = st.slider("Shadow X offset", -10, 10, 2)
-            sh_y = st.slider("Shadow Y offset", -10, 15, 3)
-            sh_blur = st.slider("Shadow blur", 0, 20, 6)
-            sh_op = st.slider("Shadow opacity", 0, 255, 110)
+            
+            st.markdown("**Shadow (Thông số đã tối ưu)**")
+            sh_x = st.slider("Shadow X offset", -10, 10, 3)
+            sh_y = st.slider("Shadow Y offset", -10, 15, 5)
+            sh_blur = st.slider("Shadow blur", 0, 30, 12) # Tăng giới hạn lên 30 để tùy chỉnh linh hoạt
+            sh_op = st.slider("Shadow opacity", 0, 255, 85)
 
         with st.expander("🪄 Tách nền trắng (tuỳ chọn)", expanded=False):
             bg_mode_label = st.radio(
