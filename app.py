@@ -34,18 +34,19 @@ from auth import require_login, logout_btn
 # HẰNG SỐ — đã tối ưu khớp mẫu
 # ══════════════════════════════════════════════════════
 PILL_LEFT     = 20
-PILL_RIGHT    = 330    # tăng từ 300 → 330 để pill rộng hơn (khớp mẫu)
-PILL_HEIGHT   = 58     # tăng từ 49 → 58 để chữ to thoải mái
-PILL1_TOP     = 8
-PILL2_GAP     = 11
-SHADOW_X      = 3
-SHADOW_Y      = 4
+PILL_RIGHT    = 600    # Đổi thành 600 (full viền) để khung thoải mái dãn dài theo chữ
+PILL_HEIGHT   = 49     # Fix cứng chiều cao là 49 như hình gốc
+PILL1_TOP     = 14
+PILL2_GAP     = 14
+SHADOW_X      = 2
+SHADOW_Y      = 3
 SHADOW_BLUR   = 0
-SHADOW_OP     = 90
-TEXT_PADDING  = 28
-FONT_WEIGHT   = 900    # Black (đậm nhất, khớp mẫu)
+SHADOW_OP     = 60
+TEXT_PADDING  = 22     # Khoảng cách từ chữ tới 2 mép trái/phải của khung
+FONT_WEIGHT   = 900    # Chữ đậm nhất
+TEXT_Y_NUDGE  = -2     # QUAN TRỌNG: Số âm để đẩy chữ lên trên 2px, số dương để hạ xuống.
 WHITE_TOL     = 18
-DEFAULT_FONT_FAMILY = "Montserrat-Black"  # font mặc định: Montserrat Black
+DEFAULT_FONT_FAMILY = "Montserrat-Black"
 
 MAX_UPLOAD_DIM = 1600
 MAX_UPLOAD_MB  = 20
@@ -277,6 +278,7 @@ def _build_config_for(pid: Optional[str] = None) -> ThumbnailConfig:
         shadow_offset_x=SHADOW_X, shadow_offset_y=SHADOW_Y,
         shadow_blur=SHADOW_BLUR, shadow_opacity=SHADOW_OP,
         font_family=st.session_state.get("cfg_font_family", DEFAULT_FONT_FAMILY),
+        text_y_nudge=TEXT_Y_NUDGE,  # <--- BẠN NHỚ THÊM DÒNG NÀY
     )
 
 
