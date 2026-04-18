@@ -43,10 +43,10 @@ SHADOW_Y      = 3
 SHADOW_BLUR   = 0
 SHADOW_OP     = 60
 TEXT_PADDING  = 22     # Khoảng cách từ chữ tới 2 mép trái/phải của khung
-FONT_WEIGHT   = 900    # Chữ đậm nhất
+FONT_WEIGHT   = 700    # Chữ đậm nhất
 TEXT_Y_NUDGE  = -2     # QUAN TRỌNG: Số âm để đẩy chữ lên trên 2px, số dương để hạ xuống.
 WHITE_TOL     = 18
-DEFAULT_FONT_FAMILY = "Montserrat-Black"
+DEFAULT_FONT_FAMILY = "Montserrat-Bold"
 
 MAX_UPLOAD_DIM = 1600
 MAX_UPLOAD_MB  = 20
@@ -416,12 +416,12 @@ with st.sidebar:
         font_list = list(available_fonts.keys())
         default_idx = 0
         for i, name in enumerate(font_list):
-            if "Black" in name and "Alternates" not in name:
+            if name == "Montserrat-Bold":  # <--- SỬA DÒNG NÀY ĐỂ ÉP CHỌN ĐÚNG BOLD
                 default_idx = i; break
         st.selectbox(
             "Loại chữ", font_list, index=default_idx,
             key="cfg_font_family",
-            help="Black = đậm nhất. Alternates = có kiểu chữ 'a' bo tròn đẹp.",
+            help="Mặc định sử dụng Montserrat-Bold", # Sửa lại ghi chú cho đúng
         )
     else:
         st.session_state["cfg_font_family"] = None
