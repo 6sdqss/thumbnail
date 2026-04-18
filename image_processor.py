@@ -354,20 +354,20 @@ def draw_pill_with_shadow(
     canvas: Image.Image,
     pill_box: Tuple[int, int, int, int],
     shadow_offset: Tuple[int, int] = (3, 4),
-    shadow_blur: int = 2,
+    shadow_blur: int = 0,
     shadow_opacity: int = 85,
     fill_color: Tuple[int, int, int] = (255, 255, 255),
 ) -> None:
     """
-    Vẽ ô pill trắng + duplicate pill xám mờ phía sau.
-    Dùng SUPERSAMPLING 4× để viền pill nét, mịn, không răng cưa.
+    Vẽ ô pill trắng + duplicate pill xám phía sau (SẮC NÉT như mẫu Photoshop).
 
     Kỹ thuật:
-      - Vẽ pill ở kích thước 4× lớn → downscale LANCZOS về 1× → anti-alias tự nhiên
-      - Giống cách Photoshop / Figma render pill: vector → raster high-res → scale down
-      - Shadow layer cũng được supersample để viền bóng không bị nhiễu
+      - Vẽ pill + shadow pill ở kích thước 4× → downscale LANCZOS về 1×
+      - KHÔNG blur → viền sắc nét, không bị vỡ
+      - Shadow pill offset chính xác 3-4px xuống-phải
+      - Downsample bằng LANCZOS = anti-alias chuẩn nhất (không blur)
     """
-    SS = 4  # supersample factor
+    SS = 4  # supersample factor — viền mịn không răng cưa
 
     left, top, right, bottom = pill_box
     w, h = right - left, bottom - top
@@ -375,53 +375,36 @@ def draw_pill_with_shadow(
 
     sx, sy = shadow_offset
 
-    # ═══ SHADOW LAYER (supersampled) ═══
-    pad = max(shadow_blur * 2 + 4, 8)
-    sl_w_ss = (canvas.width + pad * 2) * SS
-    sl_h_ss = (canvas.height + pad * 2) * SS
-    shadow_ss = Image.new("RGBA", (sl_w_ss, sl_h_ss), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow_ss)
+    # ═══ COMPOSITE LAYER: vẽ cả shadow + pill chính ở supersample ═══
+    # Bao gồm cả vùng offset shadow
+    margin = max(abs(sx), abs(sy)) + 4
+    layer_w = w + margin * 2
+    layer_h = h + margin * 2
 
-    # Vẽ pill xám ở supersample coords
-    sd.rounded_rectangle(
-        [(left + pad + sx) * SS, (top + pad + sy) * SS,
-         (right + pad + sx) * SS, (bottom + pad + sy) * SS],
+    layer_ss = Image.new("RGBA", (layer_w * SS, layer_h * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer_ss)
+
+    # 1. Vẽ SHADOW PILL (duplicate, dịch xuống-phải) ở supersample
+    d.rounded_rectangle(
+        [(margin + sx) * SS, (margin + sy) * SS,
+         (margin + sx + w) * SS, (margin + sy + h) * SS],
         radius=radius * SS,
         fill=(0, 0, 0, shadow_opacity),
     )
 
-    # Downscale LANCZOS → anti-alias mượt
-    shadow_layer = shadow_ss.resize(
-        (canvas.width + pad * 2, canvas.height + pad * 2),
-        Image.LANCZOS,
-    )
-
-    # Blur nhẹ thêm cho viền mềm (nếu muốn)
-    if shadow_blur > 0:
-        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur))
-
-    # Crop về size canvas
-    shadow_layer = shadow_layer.crop((pad, pad, pad + canvas.width, pad + canvas.height))
-    canvas.alpha_composite(shadow_layer)
-
-    # ═══ PILL TRẮNG (supersampled) ═══
-    pill_pad = 4
-    pill_ss_w = (w + pill_pad * 2) * SS
-    pill_ss_h = (h + pill_pad * 2) * SS
-    pill_ss = Image.new("RGBA", (pill_ss_w, pill_ss_h), (0, 0, 0, 0))
-    pd = ImageDraw.Draw(pill_ss)
-    pd.rounded_rectangle(
-        [pill_pad * SS, pill_pad * SS,
-         (pill_pad + w) * SS, (pill_pad + h) * SS],
+    # 2. Vẽ PILL TRẮNG đè lên (tại vị trí gốc)
+    d.rounded_rectangle(
+        [margin * SS, margin * SS,
+         (margin + w) * SS, (margin + h) * SS],
         radius=radius * SS,
         fill=(*fill_color, 255),
     )
 
-    # Downscale LANCZOS → pill nét mịn
-    pill_img = pill_ss.resize((w + pill_pad * 2, h + pill_pad * 2), Image.LANCZOS)
+    # Downscale LANCZOS → anti-alias mịn mà vẫn SẮC NÉT (không blur)
+    layer_final = layer_ss.resize((layer_w, layer_h), Image.LANCZOS)
 
-    # Paste pill trắng lên canvas
-    canvas.alpha_composite(pill_img, (left - pill_pad, top - pill_pad))
+    # Paste vào canvas tại đúng vị trí pill_box
+    canvas.alpha_composite(layer_final, (left - margin, top - margin))
 
 
 # ============ AUTO-FIT TEXT ============
