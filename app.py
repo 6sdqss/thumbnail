@@ -14,7 +14,6 @@ TÍNH NĂNG:
   ✓ Export PNG / JPG / WebP
   ✓ Bulk edit text trong bảng
   ✓ Xử lý lỗi triệt để - không crash
-  ✓ Thêm cột Link CMS tự động
 """
 from __future__ import annotations
 import io, json, time, zipfile
@@ -37,16 +36,13 @@ from auth import require_login, logout_btn
 PILL_LEFT     = 20
 PILL_RIGHT    = 300
 PILL_HEIGHT   = 49
-PILL1_TOP     = 14    # Khung 1 cách mép trên 14px
-PILL2_GAP     = 14    # Khung 2 cách mép trên 77px (14 + 49 + 14)
-
-# Điều chỉnh bóng (Shadow) cho gắt và sát với hình mẫu
-SHADOW_X      = 2
-SHADOW_Y      = 4
-SHADOW_BLUR   = 2
-SHADOW_OP     = 45
-
-TEXT_PADDING  = 20    # Chữ cách mép trái 40px (PILL_LEFT 20 + PADDING 20 = 40)
+PILL1_TOP     = 8
+PILL2_GAP     = 11
+SHADOW_X      = 3     # Dịch sang phải 3px (như duplicate layer trong PS)
+SHADOW_Y      = 4     # Dịch xuống 4px
+SHADOW_BLUR   = 2     # Blur nhẹ để viền mềm, KHÔNG lan rộng
+SHADOW_OP     = 85    # Opacity thấp → pill nhìn như xám mờ
+TEXT_PADDING  = 25
 FONT_WEIGHT   = 800
 WHITE_TOL     = 18
 
@@ -55,7 +51,7 @@ MAX_UPLOAD_MB  = 20        # ảnh > 20MB sẽ bị từ chối
 MIN_SRC_DIM    = 400       # ảnh < 400px sẽ cảnh báo (upscale sẽ vỡ)
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
 
-APP_VERSION = "7.2"
+APP_VERSION = "7.0"
 
 
 # ══════════════════════════════════════════════════════
@@ -887,9 +883,7 @@ with tab_export:
                         has_ov = any(k for k in st.session_state.get("overrides", {}).get(pid, {})
                                     if k not in ("t1","t2"))
                         cms.append({
-                            "id": pid, 
-                            "cms_link": f"https://cms.thegioididong.com/product/Edit?productID={pid}",
-                            "text1": row["text1"], "text2": row["text2"],
+                            "id": pid, "text1": row["text1"], "text2": row["text2"],
                             "filename": f"{sid}.{fmt_low}",
                             "sizes": ";".join(str(s) for s in all_sizes),
                             "fonts": ";".join(str(s) for s in info["font_sizes_used"]),
@@ -900,14 +894,11 @@ with tab_export:
                         done_ops += len(all_sizes)
                         prog.progress(done_ops / total_ops, text=f"Lỗi: {pid}")
                         errors.append(f"{pid}: {str(e)[:100]}")
-                        cms.append({"id": pid, 
-                                    "cms_link": f"https://cms.thegioididong.com/product/Edit?productID={pid}",
-                                    "text1": row.get("text1",""),
+                        cms.append({"id": pid, "text1": row.get("text1",""),
                                     "text2": row.get("text2",""), "filename": "ERROR",
                                     "sizes": "", "fonts": "", "shrunk": str(e)[:50],
                                     "custom_config": "no"})
 
-                # MÃ ĐÃ ĐƯỢC THỤT LỀ VÀO BÊN TRONG VÒNG WITH ZIPFILE CỦA PYTHON (FIX LỖI CRASH)
                 # CMS files
                 if include_csv and cms:
                     cdf = pd.DataFrame(cms)
