@@ -476,12 +476,11 @@ def draw_dynamic_pill_and_text(
     # Ép dùng size chuẩn, không tự động thu nhỏ font nữa để đảm bảo đồng nhất
     font = load_font(config.font_size, config.font_weight, config.font_family)
     
-    # 1. Đo chính xác chiều ngang của chữ
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
+    # 1. FIX HỘP CHỨA: Thay textbbox bằng textlength để đo chiều ngang cực chuẩn
+    text_width = draw.textlength(text, font=font)
     
-    # 2. Tính chiều dài khung (Pill): Chiều dài chữ + Padding 2 bên
-    actual_pill_width = text_width + (config.text_padding * 2)
+    # 2. Tính chiều dài khung (Pill): Chiều ngang thực tế của chữ + Padding 2 bên
+    actual_pill_width = int(text_width) + (config.text_padding * 2)
     actual_pill_right = min(config.pill_left + actual_pill_width, config.pill_right)
     
     # Khóa cứng chiều cao (y_top đến y_top + pill_height)
@@ -500,7 +499,7 @@ def draw_dynamic_pill_and_text(
         shadow_opacity=config.shadow_opacity,
     )
 
-    # 4. Vẽ Chữ (Ép căn giữa tuyệt đối theo trục Y)
+    # 4. Vẽ Chữ (Ép căn giữa tuyệt đối theo trục Y bằng anchor "lm")
     text_x = config.pill_left + config.text_padding
     
     # Tìm tọa độ tâm của khung trắng
@@ -509,7 +508,7 @@ def draw_dynamic_pill_and_text(
     # Sử dụng text_y_nudge để đẩy chữ lên xuống cho vừa mắt nhất
     final_text_y = center_y + config.text_y_nudge
     
-    # Dùng anchor "lm" (Left-Middle) để Pillow tự động bám tâm Y, không quan tâm đuôi chữ
+    # Dùng anchor "lm" (Left-Middle) để Pillow tự động bám tâm Y
     draw.text((text_x, final_text_y), text, font=font, fill=config.text_color, anchor="lm")
     
     return config.font_size
