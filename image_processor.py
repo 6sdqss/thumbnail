@@ -515,7 +515,7 @@ class ThumbnailConfig:
     bottom_margin: int = DEFAULT_BOTTOM_MARGIN     # 55: không sát đáy
     side_padding: int = DEFAULT_SIDE_PADDING       # 40: không sát viền trái/phải
     font_size: float = DEFAULT_FONT_SIZE
-    font_weight: int = 900                         # ĐỔI TỪ 800 -> 900 (BLACK) ĐỂ CHỮ CỨNG CÁP HƠN
+    font_weight: int = 700                         # ĐỔI TỪ 800 -> 900 (BLACK) ĐỂ CHỮ CỨNG CÁP HƠN
     text_color: Tuple[int, int, int] = (51, 51, 51) # ĐỔI TỪ ĐEN -> XÁM ĐẬM (#333333) ĐỂ MÀU NHẸ HƠN
     text_padding: int = DEFAULT_TEXT_PADDING       # 25: text thụt 25px
     remove_bg_mode: str = "none"                   # "none" | "white" | "ai"
