@@ -28,7 +28,7 @@ CANVAS_SIZE = 600
 DEFAULT_TOP_MARGIN = 155      # đẩy sp xuống dưới pill (pill kết thúc ~y=128 + buffer)
 DEFAULT_BOTTOM_MARGIN = 55    # cách đáy, sp không sát viền
 DEFAULT_SIDE_PADDING = 40     # cách 2 bên trái/phải
-DEFAULT_FONT_SIZE = 20.4
+DEFAULT_FONT_SIZE = 27.0      # FIX: Tăng size lên 27.0 để chữ to bằng mẫu Canva
 DEFAULT_TEXT_PADDING = 25     # text thụt vào ô pill 25px
 
 # Layout 2 pill - đo chính xác từ thumb mẫu
@@ -422,6 +422,7 @@ def auto_fit_text(
     color: Tuple[int, int, int] = (0, 0, 0),
     weight: int = 700,
     side_padding: int = 22,
+    y_nudge: int = -2  # FIX: Thêm tham số để tinh chỉnh dọc
 ) -> float:
     """
     Vẽ text vào pill.
@@ -450,16 +451,23 @@ def auto_fit_text(
     font = load_font(used, weight)
     tw, th, y_off = _measure(draw, text, font)
 
+    # FIX CĂN GIỮA: Đo khối pixel thực tế của chữ thay vì box mặc định
+    mask = font.getmask(text)
+    mask_bbox = mask.getbbox()
+    if mask_bbox:
+        actual_th = mask_bbox[3] - mask_bbox[1]
+        actual_y_off = mask_bbox[1]
+    else:
+        actual_th = th
+        actual_y_off = y_off
+
     x = left + side_padding
     pill_h = bottom - top
-    # Căn giữa dọc: bù y_off để ký tự nằm chính giữa ô pill
-    y = top + (pill_h - th) // 2 - y_off
+    # Căn giữa dọc: bù y_off thực tế để ký tự nằm chính giữa ô pill + y_nudge
+    y = top + (pill_h - actual_th) // 2 - actual_y_off + y_nudge
 
     # Dùng anti-aliasing tốt nhất của Pillow cho text
-    # Pillow tự anti-alias text khi dùng TrueType font, nhưng ta có thể
-    # thêm tham số anchor để kiểm soát chính xác
-    draw.text((x, y), text, font=font, fill=color,
-              anchor="la")  # left-ascender alignment
+    draw.text((x, y), text, font=font, fill=color, anchor="la") 
     return used
 
 
@@ -469,10 +477,11 @@ class ThumbnailConfig:
     top_margin: int = DEFAULT_TOP_MARGIN           # 155: sp dưới pill
     bottom_margin: int = DEFAULT_BOTTOM_MARGIN     # 55: không sát đáy
     side_padding: int = DEFAULT_SIDE_PADDING       # 40: không sát viền trái/phải
-    font_size: float = DEFAULT_FONT_SIZE
-    font_weight: int = 800                         # ExtraBold giống mẫu
+    font_size: float = DEFAULT_FONT_SIZE           # Được gọi tới biến 27.0
+    font_weight: int = 900                         # FIX: Nâng lên 900 cho chữ cực dày
     text_color: Tuple[int, int, int] = (0, 0, 0)
     text_padding: int = DEFAULT_TEXT_PADDING       # 25: text thụt 25px
+    text_y_nudge: int = -2                         # FIX: offset đẩy chữ lên
     remove_bg_mode: str = "none"                   # "none" | "white" | "ai"
     white_tolerance: int = 18
     show_background: bool = True
@@ -577,6 +586,7 @@ def build_thumbnail(
             color=config.text_color,
             weight=config.font_weight,
             side_padding=config.text_padding,
+            y_nudge=config.text_y_nudge, # FIX: Thêm y_nudge
         )
         sizes_used.append(s)
 
@@ -593,6 +603,7 @@ def build_thumbnail(
             color=config.text_color,
             weight=config.font_weight,
             side_padding=config.text_padding,
+            y_nudge=config.text_y_nudge, # FIX: Thêm y_nudge
         )
         sizes_used.append(s)
 
