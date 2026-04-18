@@ -1,5 +1,5 @@
 """
-app.py — Thumbnail
+app.py — Thumbnail Builder Pro v7 (Production)
 ════════════════════════════════════════════════
 Tối ưu cho xử lý hàng loạt 100+ SP/ngày, không lỗi, UI nhất quán.
 
@@ -31,25 +31,25 @@ from auth import require_login, logout_btn
 
 
 # ══════════════════════════════════════════════════════
-# HẰNG SỐ — đã tối ưu
+# HẰNG SỐ — đã tối ưu khớp mẫu
 # ══════════════════════════════════════════════════════
 PILL_LEFT     = 20
-PILL_RIGHT    = 300
-PILL_HEIGHT   = 49
-PILL1_TOP     = 14
-PILL2_GAP     = 14
-SHADOW_X      = 3     # Dịch phải 3px
-SHADOW_Y      = 4     # Dịch xuống 4px
-SHADOW_BLUR   = 0     # KHÔNG blur → viền sắc nét như Photoshop
-SHADOW_OP     = 55    # Pill xám thấy rõ nhưng không quá đậm
-TEXT_PADDING  = 20
-FONT_WEIGHT   = 900
-TEXT_Y_NUDGE  = -2    # Thêm dòng này (Tinh chỉnh dọc: số âm là đẩy chữ lên trên)
+PILL_RIGHT    = 330    # tăng từ 300 → 330 để pill rộng hơn (khớp mẫu)
+PILL_HEIGHT   = 58     # tăng từ 49 → 58 để chữ to thoải mái
+PILL1_TOP     = 8
+PILL2_GAP     = 11
+SHADOW_X      = 3
+SHADOW_Y      = 4
+SHADOW_BLUR   = 0
+SHADOW_OP     = 90
+TEXT_PADDING  = 28
+FONT_WEIGHT   = 900    # Black (đậm nhất, khớp mẫu)
 WHITE_TOL     = 18
+DEFAULT_FONT_FAMILY = "Montserrat-Black"  # font mặc định: Montserrat Black
 
-MAX_UPLOAD_DIM = 1600      # nén ảnh upload xuống ≤ 1600px để tiết kiệm RAM
-MAX_UPLOAD_MB  = 20        # ảnh > 20MB sẽ bị từ chối
-MIN_SRC_DIM    = 400       # ảnh < 400px sẽ cảnh báo (upscale sẽ vỡ)
+MAX_UPLOAD_DIM = 1600
+MAX_UPLOAD_MB  = 20
+MIN_SRC_DIM    = 400
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
 
 APP_VERSION = "7.0"
@@ -138,18 +138,18 @@ def _bg():
 # PRESETS
 # ══════════════════════════════════════════════════════
 PRESETS: Dict[str, dict] = {
-    "🎯 Chuẩn (mặc định)": dict(top_margin=155, bottom_margin=35, side_padding=40,
-                                product_scale=1.0, center_mode="centroid", font_size=27),
-    "🍳 Đồ gia dụng": dict(top_margin=170, bottom_margin=50, side_padding=50,
-                           product_scale=1.1, center_mode="centroid", font_size=27),
-    "🎧 Điện tử": dict(top_margin=160, bottom_margin=60, side_padding=40,
-                       product_scale=1.0, center_mode="centroid", font_size=27),
-    "🧴 Mỹ phẩm, chai": dict(top_margin=150, bottom_margin=55, side_padding=60,
-                             product_scale=0.95, center_mode="bbox", font_size=27),
-    "👕 Thời trang": dict(top_margin=155, bottom_margin=45, side_padding=35,
-                          product_scale=1.05, center_mode="bbox", font_size=27),
-    "📱 Điện thoại dọc": dict(top_margin=160, bottom_margin=50, side_padding=70,
-                              product_scale=1.0, center_mode="bbox", font_size=27),
+    "🎯 Chuẩn (mặc định)": dict(top_margin=175, bottom_margin=55, side_padding=40,
+                                product_scale=1.0, center_mode="centroid", font_size=27.0),
+    "🍳 Đồ gia dụng": dict(top_margin=185, bottom_margin=50, side_padding=50,
+                           product_scale=1.1, center_mode="centroid", font_size=27.0),
+    "🎧 Điện tử": dict(top_margin=180, bottom_margin=60, side_padding=40,
+                       product_scale=1.0, center_mode="centroid", font_size=26.0),
+    "🧴 Mỹ phẩm, chai": dict(top_margin=175, bottom_margin=55, side_padding=60,
+                             product_scale=0.95, center_mode="bbox", font_size=27.0),
+    "👕 Thời trang": dict(top_margin=175, bottom_margin=45, side_padding=35,
+                          product_scale=1.05, center_mode="bbox", font_size=27.0),
+    "📱 Điện thoại dọc": dict(top_margin=180, bottom_margin=50, side_padding=70,
+                              product_scale=1.0, center_mode="bbox", font_size=27.0),
 }
 
 
@@ -254,7 +254,7 @@ def _effective_df() -> pd.DataFrame:
 def _build_config_for(pid: Optional[str] = None) -> ThumbnailConfig:
     g = {
         "top_margin": st.session_state.get("cfg_top_margin", 155),
-        "bottom_margin": st.session_state.get("cfg_bottom_margin", 35),
+        "bottom_margin": st.session_state.get("cfg_bottom_margin", 55),
         "side_padding": st.session_state.get("cfg_side_padding", 40),
         "product_scale": st.session_state.get("cfg_product_scale", 1.0),
         "center_mode": st.session_state.get("cfg_center_mode", "centroid"),
@@ -275,8 +275,8 @@ def _build_config_for(pid: Optional[str] = None) -> ThumbnailConfig:
         pill_left=PILL_LEFT, pill_right=PILL_RIGHT, pill_height=PILL_HEIGHT,
         pill1_top=PILL1_TOP, pill2_gap=PILL2_GAP,
         shadow_offset_x=SHADOW_X, shadow_offset_y=SHADOW_Y,
-       shadow_blur=SHADOW_BLUR, shadow_opacity=SHADOW_OP,
-        text_y_nudge=TEXT_Y_NUDGE, # Thêm dòng này
+        shadow_blur=SHADOW_BLUR, shadow_opacity=SHADOW_OP,
+        font_family=st.session_state.get("cfg_font_family", DEFAULT_FONT_FAMILY),
     )
 
 
@@ -403,7 +403,29 @@ with st.sidebar:
 
     st.divider()
     st.markdown("**✒️ Font**")
-    st.number_input("Kích thước", 9.0, 30.0, key="cfg_font_size", step=0.2, format="%.1f")
+
+    # Font family picker
+    try:
+        from image_processor import list_available_fonts
+        available_fonts = list_available_fonts()
+    except Exception:
+        available_fonts = {}
+    if available_fonts:
+        font_list = list(available_fonts.keys())
+        default_idx = 0
+        for i, name in enumerate(font_list):
+            if "Black" in name and "Alternates" not in name:
+                default_idx = i; break
+        st.selectbox(
+            "Loại chữ", font_list, index=default_idx,
+            key="cfg_font_family",
+            help="Black = đậm nhất. Alternates = có kiểu chữ 'a' bo tròn đẹp.",
+        )
+    else:
+        st.session_state["cfg_font_family"] = None
+
+    st.number_input("Kích thước", 9.0, 40.0, key="cfg_font_size", step=0.5, format="%.1f",
+                    help="Mặc định 27 — khớp mẫu thumbnail chuẩn")
 
     st.divider()
     st.markdown("**📤 Xuất file**")
@@ -733,7 +755,7 @@ with tab_edit:
                                                     format="%.2f", key=f"ov_scale_{pid}")
                     with c2:
                         new_bot = st.number_input("Mép dưới", 0, 250, int(cur_bot), 5, key=f"ov_bot_{pid}")
-                        new_font = st.number_input("Font size", 9.0, 30.0, float(cur_font), 0.2,
+                        new_font = st.number_input("Font size", 9.0, 40.0, float(cur_font), 0.5,
                                                    format="%.1f", key=f"ov_font_{pid}")
                         new_center = st.radio("Căn", ["centroid","bbox"],
                                               index=0 if cur_center=="centroid" else 1,
