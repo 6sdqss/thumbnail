@@ -140,7 +140,7 @@ def _bg():
 # ══════════════════════════════════════════════════════
 PRESETS: Dict[str, dict] = {
     "🎯 Chuẩn (mặc định)": dict(top_margin=155, bottom_margin=35, side_padding=40,
-                                product_scale=1.0, center_mode="centroid", font_size=35.0),
+                                product_scale=1.0, center_mode="centroid", font_size=32.5),
     "🍳 Đồ gia dụng": dict(top_margin=185, bottom_margin=50, side_padding=50,
                            product_scale=1.1, center_mode="centroid", font_size=32.0),
     "🎧 Điện tử": dict(top_margin=180, bottom_margin=60, side_padding=40,
