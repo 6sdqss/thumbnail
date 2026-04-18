@@ -43,7 +43,8 @@ SHADOW_Y      = 4     # Dịch xuống 4px
 SHADOW_BLUR   = 0     # KHÔNG blur → viền sắc nét như Photoshop
 SHADOW_OP     = 55    # Pill xám thấy rõ nhưng không quá đậm
 TEXT_PADDING  = 20
-FONT_WEIGHT   = 800
+FONT_WEIGHT   = 900
+TEXT_Y_NUDGE  = -2    # Thêm dòng này (Tinh chỉnh dọc: số âm là đẩy chữ lên trên)
 WHITE_TOL     = 18
 
 MAX_UPLOAD_DIM = 1600      # nén ảnh upload xuống ≤ 1600px để tiết kiệm RAM
@@ -138,17 +139,17 @@ def _bg():
 # ══════════════════════════════════════════════════════
 PRESETS: Dict[str, dict] = {
     "🎯 Chuẩn (mặc định)": dict(top_margin=155, bottom_margin=35, side_padding=40,
-                                product_scale=1.0, center_mode="centroid", font_size=20.4),
+                                product_scale=1.0, center_mode="centroid", font_size=27),
     "🍳 Đồ gia dụng": dict(top_margin=170, bottom_margin=50, side_padding=50,
-                           product_scale=1.1, center_mode="centroid", font_size=20.4),
+                           product_scale=1.1, center_mode="centroid", font_size=27),
     "🎧 Điện tử": dict(top_margin=160, bottom_margin=60, side_padding=40,
-                       product_scale=1.0, center_mode="centroid", font_size=20.0),
+                       product_scale=1.0, center_mode="centroid", font_size=27),
     "🧴 Mỹ phẩm, chai": dict(top_margin=150, bottom_margin=55, side_padding=60,
-                             product_scale=0.95, center_mode="bbox", font_size=20.4),
+                             product_scale=0.95, center_mode="bbox", font_size=27),
     "👕 Thời trang": dict(top_margin=155, bottom_margin=45, side_padding=35,
-                          product_scale=1.05, center_mode="bbox", font_size=20.4),
+                          product_scale=1.05, center_mode="bbox", font_size=27),
     "📱 Điện thoại dọc": dict(top_margin=160, bottom_margin=50, side_padding=70,
-                              product_scale=1.0, center_mode="bbox", font_size=20.4),
+                              product_scale=1.0, center_mode="bbox", font_size=27),
 }
 
 
@@ -274,7 +275,8 @@ def _build_config_for(pid: Optional[str] = None) -> ThumbnailConfig:
         pill_left=PILL_LEFT, pill_right=PILL_RIGHT, pill_height=PILL_HEIGHT,
         pill1_top=PILL1_TOP, pill2_gap=PILL2_GAP,
         shadow_offset_x=SHADOW_X, shadow_offset_y=SHADOW_Y,
-        shadow_blur=SHADOW_BLUR, shadow_opacity=SHADOW_OP,
+       shadow_blur=SHADOW_BLUR, shadow_opacity=SHADOW_OP,
+        text_y_nudge=TEXT_Y_NUDGE, # Thêm dòng này
     )
 
 
