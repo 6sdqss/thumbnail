@@ -515,8 +515,8 @@ class ThumbnailConfig:
     bottom_margin: int = DEFAULT_BOTTOM_MARGIN     # 55: không sát đáy
     side_padding: int = DEFAULT_SIDE_PADDING       # 40: không sát viền trái/phải
     font_size: float = DEFAULT_FONT_SIZE
-    font_weight: int = 800                         # ExtraBold giống mẫu
-    text_color: Tuple[int, int, int] = (0, 0, 0)
+    font_weight: int = 900                         # ĐỔI TỪ 800 -> 900 (BLACK) ĐỂ CHỮ CỨNG CÁP HƠN
+    text_color: Tuple[int, int, int] = (51, 51, 51) # ĐỔI TỪ ĐEN -> XÁM ĐẬM (#333333) ĐỂ MÀU NHẸ HƠN
     text_padding: int = DEFAULT_TEXT_PADDING       # 25: text thụt 25px
     remove_bg_mode: str = "none"                   # "none" | "white" | "ai"
     white_tolerance: int = 18
@@ -530,10 +530,10 @@ class ThumbnailConfig:
     pill1_top: int = PILL1_TOP
     pill2_gap: int = 11
     # Shadow
-    shadow_offset_x: int = 2
-    shadow_offset_y: int = 3
+    shadow_offset_x: int = 1                      # ĐỔI TỪ 2 -> 1 ĐỂ GIẢM CẢM GIÁC LƠ LỬNG
+    shadow_offset_y: int = 2                      # ĐỔI TỪ 3 -> 2 ĐỂ GIẢM CẢM GIÁC LƠ LỬNG
     shadow_blur: int = 6
-    shadow_opacity: int = 110
+    shadow_opacity: int = 40                      # ĐỔI TỪ 110 -> 40 (BÓNG RẤT NHẸ ĐỂ GIỮ SỰ SẮC NÉT VÀ CHẮC CHẮN)
     # Font family (None = dùng Montserrat variable mặc định)
     font_family: Optional[str] = None
     text_y_nudge: int = -2  # <--- THÊM DÒNG NÀY VÀO DƯỚI CÙNG
