@@ -359,59 +359,69 @@ def draw_pill_with_shadow(
     fill_color: Tuple[int, int, int] = (255, 255, 255),
 ) -> None:
     """
-    Vẽ ô pill trắng có LAYER PILL XÁM MỜ phía sau (duplicate kiểu Photoshop).
+    Vẽ ô pill trắng + duplicate pill xám mờ phía sau.
+    Dùng SUPERSAMPLING 4× để viền pill nét, mịn, không răng cưa.
 
     Kỹ thuật:
-      - Vẽ 1 pill y hệt pill chính nhưng màu xám nhạt
-      - Dịch xuống-phải theo shadow_offset
-      - Blur nhẹ (shadow_blur ~1-3px) để viền mượt
-      - Opacity thấp (~80-110) cho cảm giác mờ nhẹ
-      - Pill chính trắng đè lên trên → nhìn như pill 2 lớp chồng nhau
-
-    Giống thao tác trong Photoshop:
-      1. Duplicate pill layer (Ctrl+J)
-      2. Fill thành màu xám
-      3. Đưa layer xám xuống dưới
-      4. Dịch nhẹ xuống-phải
-      5. Giảm opacity
+      - Vẽ pill ở kích thước 4× lớn → downscale LANCZOS về 1× → anti-alias tự nhiên
+      - Giống cách Photoshop / Figma render pill: vector → raster high-res → scale down
+      - Shadow layer cũng được supersample để viền bóng không bị nhiễu
     """
+    SS = 4  # supersample factor
+
     left, top, right, bottom = pill_box
     w, h = right - left, bottom - top
     radius = h // 2
 
     sx, sy = shadow_offset
-    # Padding để blur không bị cắt
-    pad = max(shadow_blur * 2 + 4, 8)
-    sl_w = canvas.width + pad * 2
-    sl_h = canvas.height + pad * 2
-    shadow_layer = Image.new("RGBA", (sl_w, sl_h), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow_layer)
 
-    # Vẽ pill xám (duplicate) CÙNG KÍCH THƯỚC pill chính, dịch theo offset
+    # ═══ SHADOW LAYER (supersampled) ═══
+    pad = max(shadow_blur * 2 + 4, 8)
+    sl_w_ss = (canvas.width + pad * 2) * SS
+    sl_h_ss = (canvas.height + pad * 2) * SS
+    shadow_ss = Image.new("RGBA", (sl_w_ss, sl_h_ss), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow_ss)
+
+    # Vẽ pill xám ở supersample coords
     sd.rounded_rectangle(
-        [left + pad + sx, top + pad + sy,
-         right + pad + sx, bottom + pad + sy],
-        radius=radius,
-        fill=(0, 0, 0, shadow_opacity),  # Đen với opacity thấp = xám mờ
+        [(left + pad + sx) * SS, (top + pad + sy) * SS,
+         (right + pad + sx) * SS, (bottom + pad + sy) * SS],
+        radius=radius * SS,
+        fill=(0, 0, 0, shadow_opacity),
     )
 
-    # Blur NHẸ (1-3px) chỉ để mềm viền, KHÔNG blur mạnh thành glow
+    # Downscale LANCZOS → anti-alias mượt
+    shadow_layer = shadow_ss.resize(
+        (canvas.width + pad * 2, canvas.height + pad * 2),
+        Image.LANCZOS,
+    )
+
+    # Blur nhẹ thêm cho viền mềm (nếu muốn)
     if shadow_blur > 0:
         shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur))
 
-    # Crop về đúng size canvas
+    # Crop về size canvas
     shadow_layer = shadow_layer.crop((pad, pad, pad + canvas.width, pad + canvas.height))
-
-    # Composite pill xám trước
     canvas.alpha_composite(shadow_layer)
 
-    # Vẽ pill trắng đè lên trên
-    pd = ImageDraw.Draw(canvas)
+    # ═══ PILL TRẮNG (supersampled) ═══
+    pill_pad = 4
+    pill_ss_w = (w + pill_pad * 2) * SS
+    pill_ss_h = (h + pill_pad * 2) * SS
+    pill_ss = Image.new("RGBA", (pill_ss_w, pill_ss_h), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(pill_ss)
     pd.rounded_rectangle(
-        [left, top, right, bottom],
-        radius=radius,
+        [pill_pad * SS, pill_pad * SS,
+         (pill_pad + w) * SS, (pill_pad + h) * SS],
+        radius=radius * SS,
         fill=(*fill_color, 255),
     )
+
+    # Downscale LANCZOS → pill nét mịn
+    pill_img = pill_ss.resize((w + pill_pad * 2, h + pill_pad * 2), Image.LANCZOS)
+
+    # Paste pill trắng lên canvas
+    canvas.alpha_composite(pill_img, (left - pill_pad, top - pill_pad))
 
 
 # ============ AUTO-FIT TEXT ============
@@ -461,7 +471,12 @@ def auto_fit_text(
     pill_h = bottom - top
     # Căn giữa dọc: bù y_off để ký tự nằm chính giữa ô pill
     y = top + (pill_h - th) // 2 - y_off
-    draw.text((x, y), text, font=font, fill=color)
+
+    # Dùng anti-aliasing tốt nhất của Pillow cho text
+    # Pillow tự anti-alias text khi dùng TrueType font, nhưng ta có thể
+    # thêm tham số anchor để kiểm soát chính xác
+    draw.text((x, y), text, font=font, fill=color,
+              anchor="la")  # left-ascender alignment
     return used
 
 
