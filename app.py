@@ -137,7 +137,7 @@ def _bg():
 # PRESETS
 # ══════════════════════════════════════════════════════
 PRESETS: Dict[str, dict] = {
-    "🎯 Chuẩn (mặc định)": dict(top_margin=155, bottom_margin=55, side_padding=40,
+    "🎯 Chuẩn (mặc định)": dict(top_margin=155, bottom_margin=35, side_padding=40,
                                 product_scale=1.0, center_mode="centroid", font_size=20.4),
     "🍳 Đồ gia dụng": dict(top_margin=170, bottom_margin=50, side_padding=50,
                            product_scale=1.1, center_mode="centroid", font_size=20.4),
@@ -253,7 +253,7 @@ def _effective_df() -> pd.DataFrame:
 def _build_config_for(pid: Optional[str] = None) -> ThumbnailConfig:
     g = {
         "top_margin": st.session_state.get("cfg_top_margin", 155),
-        "bottom_margin": st.session_state.get("cfg_bottom_margin", 55),
+        "bottom_margin": st.session_state.get("cfg_bottom_margin", 35),
         "side_padding": st.session_state.get("cfg_side_padding", 40),
         "product_scale": st.session_state.get("cfg_product_scale", 1.0),
         "center_mode": st.session_state.get("cfg_center_mode", "centroid"),
