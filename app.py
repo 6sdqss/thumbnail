@@ -138,18 +138,18 @@ def _bg():
 # PRESETS
 # ══════════════════════════════════════════════════════
 PRESETS: Dict[str, dict] = {
-    "🎯 Chuẩn (mặc định)": dict(top_margin=175, bottom_margin=55, side_padding=40,
-                                product_scale=1.0, center_mode="centroid", font_size=27.0),
+    "🎯 Chuẩn (mặc định)": dict(top_margin=175, bottom_margin=35, side_padding=40,
+                                product_scale=1.0, center_mode="centroid", font_size=32.0),
     "🍳 Đồ gia dụng": dict(top_margin=185, bottom_margin=50, side_padding=50,
-                           product_scale=1.1, center_mode="centroid", font_size=27.0),
+                           product_scale=1.1, center_mode="centroid", font_size=32.0),
     "🎧 Điện tử": dict(top_margin=180, bottom_margin=60, side_padding=40,
-                       product_scale=1.0, center_mode="centroid", font_size=26.0),
+                       product_scale=1.0, center_mode="centroid", font_size=32.0),
     "🧴 Mỹ phẩm, chai": dict(top_margin=175, bottom_margin=55, side_padding=60,
-                             product_scale=0.95, center_mode="bbox", font_size=27.0),
+                             product_scale=0.95, center_mode="bbox", font_size=32.0),
     "👕 Thời trang": dict(top_margin=175, bottom_margin=45, side_padding=35,
-                          product_scale=1.05, center_mode="bbox", font_size=27.0),
+                          product_scale=1.05, center_mode="bbox", font_size=32.0),
     "📱 Điện thoại dọc": dict(top_margin=180, bottom_margin=50, side_padding=70,
-                              product_scale=1.0, center_mode="bbox", font_size=27.0),
+                              product_scale=1.0, center_mode="bbox", font_size=32.0),
 }
 
 
