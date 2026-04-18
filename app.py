@@ -1,5 +1,5 @@
 """
-app.py — Thumbnail Builder Pro v7 (Production)
+app.py — Thumbnail
 ════════════════════════════════════════════════
 Tối ưu cho xử lý hàng loạt 100+ SP/ngày, không lỗi, UI nhất quán.
 
@@ -36,13 +36,13 @@ from auth import require_login, logout_btn
 PILL_LEFT     = 20
 PILL_RIGHT    = 300
 PILL_HEIGHT   = 49
-PILL1_TOP     = 8
-PILL2_GAP     = 11
+PILL1_TOP     = 14
+PILL2_GAP     = 14
 SHADOW_X      = 3     # Dịch phải 3px
 SHADOW_Y      = 4     # Dịch xuống 4px
 SHADOW_BLUR   = 0     # KHÔNG blur → viền sắc nét như Photoshop
-SHADOW_OP     = 60    # Pill xám thấy rõ nhưng không quá đậm
-TEXT_PADDING  = 25
+SHADOW_OP     = 55    # Pill xám thấy rõ nhưng không quá đậm
+TEXT_PADDING  = 20
 FONT_WEIGHT   = 800
 WHITE_TOL     = 18
 
