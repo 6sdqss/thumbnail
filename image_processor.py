@@ -454,11 +454,7 @@ def draw_pill_with_shadow(
     canvas.alpha_composite(layer_final, (left - margin, top - margin))
 
 
-# ============ AUTO-FIT TEXT & DYNAMIC PILL ============
-def _measure(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -> Tuple[int, int, int]:
-    bbox = draw.textbbox((0, 0), text, font=font)
-    return bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[1]
-
+# ============ VẼ KHUNG VÀ CHỮ (FIX CHIỀU CAO, DÃN CHIỀU DÀI) ============
 def draw_dynamic_pill_and_text(
     canvas: Image.Image,
     text: str,
@@ -469,26 +465,19 @@ def draw_dynamic_pill_and_text(
         return config.font_size
 
     draw = ImageDraw.Draw(canvas)
-    # Không cho khung vượt quá PILL_RIGHT
-    max_w = config.pill_right - config.pill_left - 2 * config.text_padding
-    max_h = config.pill_height - 4
-
-    size = float(config.font_size)
-    while size >= 9.0:
-        font = load_font(size, config.font_weight, config.font_family)
-        tw, th, _ = _measure(draw, text, font)
-        if tw <= max_w and th <= max_h:
-            break
-        size -= 0.3
-
-    used = max(size, 9.0)
-    font = load_font(used, config.font_weight, config.font_family)
-    tw, th, y_off = _measure(draw, text, font)
-
-    # 1. Tính chiều dài thực tế của chữ -> ép Khung co lại ôm sát chữ
-    actual_pill_width = tw + 2 * config.text_padding
+    
+    # Ép dùng size chuẩn, không tự động thu nhỏ font nữa để đảm bảo đồng nhất
+    font = load_font(config.font_size, config.font_weight, config.font_family)
+    
+    # 1. Đo chính xác chiều ngang của chữ
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    
+    # 2. Tính chiều dài khung (Pill): Chiều dài chữ + Padding 2 bên
+    actual_pill_width = text_width + (config.text_padding * 2)
     actual_pill_right = min(config.pill_left + actual_pill_width, config.pill_right)
-
+    
+    # Khóa cứng chiều cao (y_top đến y_top + pill_height)
     pill_box = (
         config.pill_left,
         y_top,
@@ -496,7 +485,7 @@ def draw_dynamic_pill_and_text(
         y_top + config.pill_height
     )
 
-    # 2. Vẽ Khung trắng + Bóng đổ dựa trên kích thước linh hoạt
+    # 3. Vẽ Khung trắng và Bóng đổ
     draw_pill_with_shadow(
         canvas, pill_box,
         shadow_offset=(config.shadow_offset_x, config.shadow_offset_y),
@@ -504,12 +493,19 @@ def draw_dynamic_pill_and_text(
         shadow_opacity=config.shadow_opacity,
     )
 
-    # 3. Vẽ Chữ (Đẩy lên 2px để không bị xệ)
+    # 4. Vẽ Chữ (Ép căn giữa tuyệt đối theo trục Y)
     text_x = config.pill_left + config.text_padding
-    text_y = y_top + (config.pill_height - th) // 2 - y_off - 2
-
-    draw.text((text_x, text_y), text, font=font, fill=config.text_color, anchor="la")
-    return used
+    
+    # Tìm tọa độ tâm của khung trắng
+    center_y = y_top + (config.pill_height / 2)
+    
+    # Sử dụng text_y_nudge để đẩy chữ lên xuống cho vừa mắt nhất
+    final_text_y = center_y + config.text_y_nudge
+    
+    # Dùng anchor "lm" (Left-Middle) để Pillow tự động bám tâm Y, không quan tâm đuôi chữ
+    draw.text((text_x, final_text_y), text, font=font, fill=config.text_color, anchor="lm")
+    
+    return config.font_size
 
 
 # ============ CẤU HÌNH ============
@@ -540,6 +536,7 @@ class ThumbnailConfig:
     shadow_opacity: int = 110
     # Font family (None = dùng Montserrat variable mặc định)
     font_family: Optional[str] = None
+    text_y_nudge: int = -2  # <--- THÊM DÒNG NÀY VÀO DƯỚI CÙNG
 
 
 # ============ BUILD THUMBNAIL ============
