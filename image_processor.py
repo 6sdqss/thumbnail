@@ -17,7 +17,7 @@ import io
 import os
 from collections import deque
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -28,7 +28,7 @@ CANVAS_SIZE = 600
 DEFAULT_TOP_MARGIN = 155      # đẩy sp xuống dưới pill (pill kết thúc ~y=128 + buffer)
 DEFAULT_BOTTOM_MARGIN = 55    # cách đáy, sp không sát viền
 DEFAULT_SIDE_PADDING = 40     # cách 2 bên trái/phải
-DEFAULT_FONT_SIZE = 27.0      # FIX: Tăng size lên 27.0 để chữ to bằng mẫu Canva
+DEFAULT_FONT_SIZE = 20.4
 DEFAULT_TEXT_PADDING = 25     # text thụt vào ô pill 25px
 
 # Layout 2 pill - đo chính xác từ thumb mẫu
@@ -253,30 +253,78 @@ def _download_montserrat_if_needed() -> Optional[str]:
     return None
 
 
-def load_font(size: float, weight: int = 700) -> ImageFont.FreeTypeFont:
+def list_available_fonts() -> Dict[str, str]:
     """
-    Load Montserrat variable font với weight 100-900.
+    Scan folder fonts/ và trả về dict {display_name: file_path} của tất cả font có sẵn.
 
-    Thứ tự ưu tiên:
-      1. fonts/Montserrat.ttf (đi kèm repo) — tốt nhất
-      2. /tmp/Montserrat.ttf (cache từ lần download trước)
-      3. Tự download Montserrat từ GitHub mirror (chạy 1 lần)
-      4. DejaVu Sans Bold (Linux/Streamlit Cloud có sẵn)
-      5. Font hệ thống Windows/Mac
-      6. Cuối cùng: PIL default (không có dấu tiếng Việt)
+    Ưu tiên các font phổ biến cho thumbnail:
+      - Montserrat-Black (đậm nhất, giống mẫu)
+      - Montserrat-ExtraBold
+      - Montserrat-Bold
+      - MontserratAlternates-Black (có chữ 'a' dạng round, đẹp cho thương hiệu)
+      - v.v.
+    """
+    font_dir = _font_dir()
+    fonts: Dict[str, str] = {}
 
-    Font loaded được cache trong memory để không đọc lại file.
+    if os.path.isdir(font_dir):
+        for fn in sorted(os.listdir(font_dir)):
+            if not fn.lower().endswith((".ttf", ".otf")): continue
+            if fn.lower().startswith("ofl"): continue
+            name = os.path.splitext(fn)[0]
+            # Loại bỏ các file Italic (ít dùng cho thumbnail)
+            if "italic" in name.lower(): continue
+            # Loại bỏ VariableFont tag
+            name = name.replace("-VariableFont_wght", "").replace("VariableFont_wght", "")
+            fonts[name] = os.path.join(font_dir, fn)
+
+    # Thứ tự ưu tiên hiển thị (đậm → nhạt, alternates trước nếu có)
+    priority = [
+        "MontserratAlternates-Black", "MontserratAlternates-ExtraBold", "MontserratAlternates-Bold",
+        "MontserratAlternates-Medium", "MontserratAlternates-Regular",
+        "Montserrat-Black", "Montserrat-Bold", "Montserrat",
+    ]
+    ordered = {}
+    for k in priority:
+        if k in fonts: ordered[k] = fonts.pop(k)
+    ordered.update(fonts)  # thêm các font còn lại
+    return ordered
+
+
+def load_font(
+    size: float,
+    weight: int = 700,
+    font_family: Optional[str] = None,
+) -> ImageFont.FreeTypeFont:
+    """
+    Load font với kích thước + (tuỳ chọn) tên family cụ thể.
+
+    Args:
+      size: kích thước font
+      weight: chỉ dùng cho variable font Montserrat.ttf (100-900)
+      font_family: tên file font KHÔNG có đuôi, VD "Montserrat-Black" hoặc
+                   "MontserratAlternates-ExtraBold". Nếu None → dùng
+                   Montserrat variable mặc định.
+
+    Caching trong _FONT_CACHE.
     """
     size_int = max(1, int(round(size)))
-    cache_key = (size_int, weight)
+    cache_key = (size_int, weight, font_family or "__default__")
     if cache_key in _FONT_CACHE:
         return _FONT_CACHE[cache_key]
 
-    candidates: List[str] = [
-        os.path.join(_font_dir(), "Montserrat.ttf"),
-    ]
+    candidates: List[str] = []
 
-    # Thử download nếu chưa có local
+    # Nếu user chọn font family cụ thể → ưu tiên nó
+    if font_family:
+        available = list_available_fonts()
+        if font_family in available:
+            candidates.append(available[font_family])
+
+    # Fallback: Montserrat variable
+    candidates.append(os.path.join(_font_dir(), "Montserrat.ttf"))
+
+    # Download nếu thiếu
     downloaded = _download_montserrat_if_needed()
     if downloaded:
         candidates.append(downloaded)
@@ -295,11 +343,10 @@ def load_font(size: float, weight: int = 700) -> ImageFont.FreeTypeFont:
         if p and os.path.isfile(p):
             try:
                 font = ImageFont.truetype(p, size_int)
-                if "Montserrat" in p or "montserrat" in p.lower():
-                    try:
-                        font.set_variation_by_axes([weight])
-                    except Exception:
-                        pass
+                # Chỉ variable font mới cần set_variation_by_axes
+                if "Montserrat.ttf" in p and not font_family:
+                    try: font.set_variation_by_axes([weight])
+                    except Exception: pass
                 _FONT_CACHE[cache_key] = font
                 return font
             except Exception:
@@ -422,13 +469,13 @@ def auto_fit_text(
     color: Tuple[int, int, int] = (0, 0, 0),
     weight: int = 700,
     side_padding: int = 22,
-    y_nudge: int = -2  # FIX: Thêm tham số để tinh chỉnh dọc
+    font_family: Optional[str] = None,
 ) -> float:
     """
     Vẽ text vào pill.
     - Text ngắn: giữ nguyên base_size
     - Text dài: tự shrink cho vừa chiều ngang pill
-    - Căn trái + căn giữa dọc (dựa trên visual bbox, bù offset Montserrat)
+    - Căn trái + căn giữa dọc
     Trả về font size thực tế đã dùng.
     """
     if not text:
@@ -441,33 +488,20 @@ def auto_fit_text(
 
     size = float(base_size)
     while size >= min_size:
-        font = load_font(size, weight)
+        font = load_font(size, weight, font_family)
         tw, th, _ = _measure(draw, text, font)
         if tw <= max_w and th <= max_h:
             break
         size -= 0.3
 
     used = max(size, min_size)
-    font = load_font(used, weight)
+    font = load_font(used, weight, font_family)
     tw, th, y_off = _measure(draw, text, font)
-
-    # FIX CĂN GIỮA: Đo khối pixel thực tế của chữ thay vì box mặc định
-    mask = font.getmask(text)
-    mask_bbox = mask.getbbox()
-    if mask_bbox:
-        actual_th = mask_bbox[3] - mask_bbox[1]
-        actual_y_off = mask_bbox[1]
-    else:
-        actual_th = th
-        actual_y_off = y_off
 
     x = left + side_padding
     pill_h = bottom - top
-    # Căn giữa dọc: bù y_off thực tế để ký tự nằm chính giữa ô pill + y_nudge
-    y = top + (pill_h - actual_th) // 2 - actual_y_off + y_nudge
-
-    # Dùng anti-aliasing tốt nhất của Pillow cho text
-    draw.text((x, y), text, font=font, fill=color, anchor="la") 
+    y = top + (pill_h - th) // 2 - y_off
+    draw.text((x, y), text, font=font, fill=color, anchor="la")
     return used
 
 
@@ -477,11 +511,10 @@ class ThumbnailConfig:
     top_margin: int = DEFAULT_TOP_MARGIN           # 155: sp dưới pill
     bottom_margin: int = DEFAULT_BOTTOM_MARGIN     # 55: không sát đáy
     side_padding: int = DEFAULT_SIDE_PADDING       # 40: không sát viền trái/phải
-    font_size: float = DEFAULT_FONT_SIZE           # Được gọi tới biến 27.0
-    font_weight: int = 900                         # FIX: Nâng lên 900 cho chữ cực dày
+    font_size: float = DEFAULT_FONT_SIZE
+    font_weight: int = 800                         # ExtraBold giống mẫu
     text_color: Tuple[int, int, int] = (0, 0, 0)
     text_padding: int = DEFAULT_TEXT_PADDING       # 25: text thụt 25px
-    text_y_nudge: int = -2                         # FIX: offset đẩy chữ lên
     remove_bg_mode: str = "none"                   # "none" | "white" | "ai"
     white_tolerance: int = 18
     show_background: bool = True
@@ -498,6 +531,8 @@ class ThumbnailConfig:
     shadow_offset_y: int = 3
     shadow_blur: int = 6
     shadow_opacity: int = 110
+    # Font family (None = dùng Montserrat variable mặc định)
+    font_family: Optional[str] = None
 
 
 # ============ BUILD THUMBNAIL ============
@@ -586,7 +621,7 @@ def build_thumbnail(
             color=config.text_color,
             weight=config.font_weight,
             side_padding=config.text_padding,
-            y_nudge=config.text_y_nudge, # FIX: Thêm y_nudge
+            font_family=config.font_family,
         )
         sizes_used.append(s)
 
@@ -603,7 +638,7 @@ def build_thumbnail(
             color=config.text_color,
             weight=config.font_weight,
             side_padding=config.text_padding,
-            y_nudge=config.text_y_nudge, # FIX: Thêm y_nudge
+            font_family=config.font_family,
         )
         sizes_used.append(s)
 
