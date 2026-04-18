@@ -26,9 +26,9 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 CANVAS_SIZE = 600
 # Layout mặc định mới: sản phẩm nằm ở nửa dưới, pill ở nửa trên (không đè nhau)
 DEFAULT_TOP_MARGIN = 155      # đẩy sp xuống dưới pill (pill kết thúc ~y=128 + buffer)
-DEFAULT_BOTTOM_MARGIN = 55    # cách đáy, sp không sát viền
+DEFAULT_BOTTOM_MARGIN = 35    # cách đáy, sp không sát viền
 DEFAULT_SIDE_PADDING = 40     # cách 2 bên trái/phải
-DEFAULT_FONT_SIZE = 20.4
+DEFAULT_FONT_SIZE = 35
 DEFAULT_TEXT_PADDING = 25     # text thụt vào ô pill 25px
 
 # Layout 2 pill - đo chính xác từ thumb mẫu
