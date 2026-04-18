@@ -34,19 +34,19 @@ from auth import require_login, logout_btn
 # HẰNG SỐ — đã tối ưu khớp mẫu
 # ══════════════════════════════════════════════════════
 PILL_LEFT     = 20
-PILL_RIGHT    = 600    # Đổi thành 600 (full viền) để khung thoải mái dãn dài theo chữ
-PILL_HEIGHT   = 49     # Fix cứng chiều cao là 49 như hình gốc
+PILL_RIGHT    = 600    
+PILL_HEIGHT   = 49     
 PILL1_TOP     = 14
 PILL2_GAP     = 14
 SHADOW_X      = 2
-SHADOW_Y      = 3
+SHADOW_Y      = 3      # Rớt bóng xuống 3px cho sắc sảo
 SHADOW_BLUR   = 0
-SHADOW_OP     = 60
-TEXT_PADDING  = 22     # Khoảng cách từ chữ tới 2 mép trái/phải của khung
-FONT_WEIGHT   = 700    # Chữ đậm nhất
-TEXT_Y_NUDGE  = -2     # QUAN TRỌNG: Số âm để đẩy chữ lên trên 2px, số dương để hạ xuống.
+SHADOW_OP     = 55     # Bóng màu xám vừa, không quá gắt
+TEXT_PADDING  = 22     # Lề 2 bên của chữ để có độ thoáng giống gốc
+FONT_WEIGHT   = 700    # Chuẩn Montserrat-Bold
+TEXT_Y_NUDGE  = -1     # Kéo chữ lên 1 tí xíu cho ngay tâm tuyệt đối
 WHITE_TOL     = 18
-DEFAULT_FONT_FAMILY = "Montserrat-Bold"
+DEFAULT_FONT_FAMILY = "Montserrat-Bold" # Chốt dùng Bold
 
 MAX_UPLOAD_DIM = 1600
 MAX_UPLOAD_MB  = 20
@@ -140,7 +140,7 @@ def _bg():
 # ══════════════════════════════════════════════════════
 PRESETS: Dict[str, dict] = {
     "🎯 Chuẩn (mặc định)": dict(top_margin=175, bottom_margin=35, side_padding=40,
-                                product_scale=1.0, center_mode="centroid", font_size=32.0),
+                                product_scale=1.0, center_mode="centroid", font_size=27.0),
     "🍳 Đồ gia dụng": dict(top_margin=185, bottom_margin=50, side_padding=50,
                            product_scale=1.1, center_mode="centroid", font_size=32.0),
     "🎧 Điện tử": dict(top_margin=180, bottom_margin=60, side_padding=40,
