@@ -454,54 +454,61 @@ def draw_pill_with_shadow(
     canvas.alpha_composite(layer_final, (left - margin, top - margin))
 
 
-# ============ AUTO-FIT TEXT ============
+# ============ AUTO-FIT TEXT & DYNAMIC PILL ============
 def _measure(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -> Tuple[int, int, int]:
     bbox = draw.textbbox((0, 0), text, font=font)
     return bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[1]
 
-
-def auto_fit_text(
+def draw_dynamic_pill_and_text(
     canvas: Image.Image,
     text: str,
-    pill_box: Tuple[int, int, int, int],
-    base_size: float = DEFAULT_FONT_SIZE,
-    min_size: float = 9.0,
-    color: Tuple[int, int, int] = (0, 0, 0),
-    weight: int = 700,
-    side_padding: int = 22,
-    font_family: Optional[str] = None,
+    y_top: int,
+    config: ThumbnailConfig
 ) -> float:
-    """
-    Vẽ text vào pill.
-    - Text ngắn: giữ nguyên base_size
-    - Text dài: tự shrink cho vừa chiều ngang pill
-    - Căn trái + căn giữa dọc
-    Trả về font size thực tế đã dùng.
-    """
     if not text:
-        return base_size
+        return config.font_size
 
     draw = ImageDraw.Draw(canvas)
-    left, top, right, bottom = pill_box
-    max_w = right - left - 2 * side_padding
-    max_h = bottom - top - 4
+    # Không cho khung vượt quá PILL_RIGHT
+    max_w = config.pill_right - config.pill_left - 2 * config.text_padding
+    max_h = config.pill_height - 4
 
-    size = float(base_size)
-    while size >= min_size:
-        font = load_font(size, weight, font_family)
+    size = float(config.font_size)
+    while size >= 9.0:
+        font = load_font(size, config.font_weight, config.font_family)
         tw, th, _ = _measure(draw, text, font)
         if tw <= max_w and th <= max_h:
             break
         size -= 0.3
 
-    used = max(size, min_size)
-    font = load_font(used, weight, font_family)
+    used = max(size, 9.0)
+    font = load_font(used, config.font_weight, config.font_family)
     tw, th, y_off = _measure(draw, text, font)
 
-    x = left + side_padding
-    pill_h = bottom - top
-    y = top + (pill_h - th) // 2 - y_off
-    draw.text((x, y), text, font=font, fill=color, anchor="la")
+    # 1. Tính chiều dài thực tế của chữ -> ép Khung co lại ôm sát chữ
+    actual_pill_width = tw + 2 * config.text_padding
+    actual_pill_right = min(config.pill_left + actual_pill_width, config.pill_right)
+
+    pill_box = (
+        config.pill_left,
+        y_top,
+        actual_pill_right,
+        y_top + config.pill_height
+    )
+
+    # 2. Vẽ Khung trắng + Bóng đổ dựa trên kích thước linh hoạt
+    draw_pill_with_shadow(
+        canvas, pill_box,
+        shadow_offset=(config.shadow_offset_x, config.shadow_offset_y),
+        shadow_blur=config.shadow_blur,
+        shadow_opacity=config.shadow_opacity,
+    )
+
+    # 3. Vẽ Chữ (Đẩy lên 2px để không bị xệ)
+    text_x = config.pill_left + config.text_padding
+    text_y = y_top + (config.pill_height - th) // 2 - y_off - 2
+
+    draw.text((text_x, text_y), text, font=font, fill=config.text_color, anchor="la")
     return used
 
 
@@ -587,59 +594,19 @@ def build_thumbnail(
     py = area_top + (area_h - fitted.height) // 2
     bg.paste(fitted, (px, py), fitted)
 
-    # 3. Pill + text
+    # 3. Pill + text (Dynamic Width)
     t1 = (text1 or "").strip()
     t2 = (text2 or "").strip()
 
-    pill1 = (
-        config.pill_left,
-        config.pill1_top,
-        config.pill_right,
-        config.pill1_top + config.pill_height,
-    )
-    pill2_top = config.pill1_top + config.pill_height + config.pill2_gap
-    pill2 = (
-        config.pill_left,
-        pill2_top,
-        config.pill_right,
-        pill2_top + config.pill_height,
-    )
-
     sizes_used: List[float] = []
 
-    # Chế độ auto: chỉ vẽ pill có text
     if t1:
-        draw_pill_with_shadow(
-            bg, pill1,
-            shadow_offset=(config.shadow_offset_x, config.shadow_offset_y),
-            shadow_blur=config.shadow_blur,
-            shadow_opacity=config.shadow_opacity,
-        )
-        s = auto_fit_text(
-            bg, t1, pill1,
-            base_size=config.font_size,
-            color=config.text_color,
-            weight=config.font_weight,
-            side_padding=config.text_padding,
-            font_family=config.font_family,
-        )
+        s = draw_dynamic_pill_and_text(bg, t1, config.pill1_top, config)
         sizes_used.append(s)
 
     if t2:
-        draw_pill_with_shadow(
-            bg, pill2,
-            shadow_offset=(config.shadow_offset_x, config.shadow_offset_y),
-            shadow_blur=config.shadow_blur,
-            shadow_opacity=config.shadow_opacity,
-        )
-        s = auto_fit_text(
-            bg, t2, pill2,
-            base_size=config.font_size,
-            color=config.text_color,
-            weight=config.font_weight,
-            side_padding=config.text_padding,
-            font_family=config.font_family,
-        )
+        pill2_top = config.pill1_top + config.pill_height + config.pill2_gap
+        s = draw_dynamic_pill_and_text(bg, t2, pill2_top, config)
         sizes_used.append(s)
 
     info["font_sizes_used"] = [round(s, 2) for s in sizes_used]
