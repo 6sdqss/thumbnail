@@ -320,9 +320,16 @@ def load_font(
         available = list_available_fonts()
         if font_family in available:
             candidates.append(available[font_family])
+        else:
+            # Sửa lỗi: Nếu không tìm thấy trong dict, thử ghép đuôi .otf hoặc .ttf
+            font_path_otf = os.path.join(_font_dir(), f"{font_family}.otf")
+            font_path_ttf = os.path.join(_font_dir(), f"{font_family}.ttf")
+            candidates.append(font_path_otf)
+            candidates.append(font_path_ttf)
 
     # Fallback: Montserrat variable
     candidates.append(os.path.join(_font_dir(), "Montserrat.ttf"))
+    candidates.append(os.path.join(_font_dir(), "Montserrat.otf")) # Thêm dòng này để backup
 
     # Download nếu thiếu
     downloaded = _download_montserrat_if_needed()
