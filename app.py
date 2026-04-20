@@ -279,7 +279,7 @@ def build_config_from_sidebar() -> Tuple[ThumbnailConfig, dict]:
         jpg_quality = st.slider("Chất lượng JPG", 70, 100, 92, disabled=(out_format != "JPG"))
 
         st.divider()
-        logout_button()
+        logout_btn()
 
     cfg = ThumbnailConfig(
         top_margin=top_m,
