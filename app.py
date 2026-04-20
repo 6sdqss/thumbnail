@@ -20,7 +20,7 @@ from auth import require_login, logout_btn
 SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 90
 FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 26
 DEFAULT_FONT_FAMILY = "Montserrat-Bold"
-DEFAULT_FONT_SIZE = 20.5
+DEFAULT_FONT_SIZE = 22.2
 PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 14
 MAX_PILL_RIGHT = 520
 MAX_UPLOAD_DIM, MAX_UPLOAD_MB, MIN_SRC_DIM = 1600, 20, 400
@@ -79,12 +79,12 @@ def _bg():
 
 # ═══ PRESETS ═══
 PRESETS = {
-    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=55,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=20.5),
-    "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=20.5),
-    "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=20.5),
-    "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=20.5),
-    "👕 Thời trang":      dict(top_margin=155,bottom_margin=45,side_padding=35,product_scale=1.05,center_mode="bbox",font_size=20.5),
-    "📱 ĐT dọc":          dict(top_margin=160,bottom_margin=50,side_padding=70,product_scale=1.0,center_mode="bbox",font_size=20.5),
+    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=55,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=22.2),
+    "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=22.2),
+    "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=22.2),
+    "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=22.2),
+    "👕 Thời trang":      dict(top_margin=155,bottom_margin=45,side_padding=35,product_scale=1.05,center_mode="bbox",font_size=22.2),
+    "📱 ĐT dọc":          dict(top_margin=160,bottom_margin=50,side_padding=70,product_scale=1.0,center_mode="bbox",font_size=22.2),
 }
 
 def _init():
@@ -156,7 +156,7 @@ def _eff_df():
 def _cfg(pid=None):
     g={k:st.session_state.get(f"cfg_{k}",v) for k,v in [
         ("top_margin",155),("bottom_margin",55),("side_padding",40),
-        ("product_scale",1.0),("center_mode","centroid"),("font_size",20.5)]}
+        ("product_scale",1.0),("center_mode","centroid"),("font_size",22.2)]}
     ov=st.session_state.get("overrides",{}).get(pid or "",{})
     for k in g:
         if ov.get(k) is not None: g[k]=ov[k]
@@ -257,7 +257,7 @@ with st.sidebar:
 c1,c2,c3,c4=st.columns([3,1,1,1])
 with c1:
     st.markdown("### 🖼️ Thumbnail Builder Pro")
-    st.caption("Dynamic pill · Montserrat Bold 20.5pt · Dark theme")
+    st.caption("Dynamic pill · Montserrat Bold (PS 20.5pt) · Dark theme")
 df=st.session_state.get("df"); mapping=st.session_state.get("mapping",{})
 ov_count=sum(1 for p in mapping if any(k for k in st.session_state.get("overrides",{}).get(p,{}) if k not in ("t1","t2")))
 with c2: st.metric("📋 Excel",len(df) if df is not None else 0)
@@ -396,7 +396,7 @@ with tab4:
                     cs=ov.get("side_padding",st.session_state.get("cfg_side_padding",40))
                     csc=ov.get("product_scale",st.session_state.get("cfg_product_scale",1.0))
                     cc=ov.get("center_mode",st.session_state.get("cfg_center_mode","centroid"))
-                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",20.5))
+                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",22.2))
                     c1,c2=st.columns(2)
                     with c1: nt=st.number_input("Trên",0,300,int(ct),5,key=f"ot_{pid}"); ns=st.number_input("Side",0,100,int(cs),5,key=f"os_{pid}"); nsc=st.number_input("Zoom",0.5,1.5,float(csc),0.05,format="%.2f",key=f"oz_{pid}")
                     with c2: nb=st.number_input("Dưới",0,250,int(cb),5,key=f"ob_{pid}"); nf=st.number_input("Font",9.0,40.0,float(cf),0.5,format="%.1f",key=f"of_{pid}"); nc=st.radio("Căn",["centroid","bbox"],index=0 if cc=="centroid" else 1,horizontal=True,key=f"oc_{pid}",format_func=lambda x:"TT" if x=="centroid" else "BBox")
