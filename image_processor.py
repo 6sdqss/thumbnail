@@ -20,19 +20,19 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-# ════ HẰNG SỐ ════
+# ════ HẰNG SỐ (Căn chỉnh theo đúng hình gốc Bluetooth 5.4) ════
 CANVAS_SIZE = 600
 DEFAULT_TOP_MARGIN = 155
 DEFAULT_BOTTOM_MARGIN = 55
 DEFAULT_SIDE_PADDING = 40
-DEFAULT_FONT_SIZE = 24.0      # Đã điều chỉnh cho thoáng
-DEFAULT_TEXT_PADDING = 25     # Khớp chính xác vạch X=65 trừ X=40
+DEFAULT_FONT_SIZE = 28.5      # Đã bơm to để chữ lấp đầy chiều cao pill
+DEFAULT_TEXT_PADDING = 24     # Padding ôm sát viền
 
-PILL_LEFT      = 40           # TỌA ĐỘ MỚI: Khớp chuẩn vạch guide dọc X=40
-PILL_HEIGHT    = 49           # FIX CỨNG: Khớp chuẩn khoảng Y=26 đến Y=75
-PILL1_TOP      = 26           # TỌA ĐỘ MỚI: Khớp chuẩn vạch guide ngang Y=26
-PILL2_GAP      = 20           # TỌA ĐỘ MỚI: Khớp chuẩn khoảng cách từ Y=75 đến Y=95
-MAX_PILL_RIGHT = 580          # pill không vượt quá x=580
+PILL_LEFT      = 20           # Lùi về đúng lề trái chuẩn của mẫu Bluetooth
+PILL_HEIGHT    = 49           # FIX CỨNG chiều cao
+PILL1_TOP      = 15           # Khớp với độ cao của mẫu
+PILL2_GAP      = 13           # Khoảng cách chuẩn
+MAX_PILL_RIGHT = 580          # pill không vượt quá lề phải
 MIN_PILL_WIDTH = 100          # pill tối thiểu 100px
 
 
@@ -300,13 +300,13 @@ class ThumbnailConfig:
     pill2_gap: int = PILL2_GAP
     max_pill_right: int = MAX_PILL_RIGHT
     # Shadow
-    shadow_offset_x: int = 3
-    shadow_offset_y: int = 4
+    shadow_offset_x: int = 2
+    shadow_offset_y: int = 3
     shadow_blur: int = 0
-    shadow_opacity: int = 60
+    shadow_opacity: int = 50
     # Font & Nudge
     font_family: Optional[str] = "Montserrat-ExtraBold"
-    text_y_nudge: int = -1 # <-- ĐÃ THÊM BIẾN NÀY ĐỂ TRÁNH CRASH
+    text_y_nudge: int = -2 # <-- Dùng -2 để cân đối tâm tuyệt đối với Cap height
 
 
 # ════ BUILD THUMBNAIL ════
