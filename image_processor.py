@@ -26,12 +26,12 @@ DEFAULT_TOP_MARGIN = 155
 DEFAULT_BOTTOM_MARGIN = 55
 DEFAULT_SIDE_PADDING = 40
 DEFAULT_FONT_SIZE = 24.0      # Đã điều chỉnh cho thoáng
-DEFAULT_TEXT_PADDING = 25     # Padding 2 bên chuẩn
+DEFAULT_TEXT_PADDING = 25     # Khớp chính xác vạch X=65 trừ X=40
 
-PILL_LEFT      = 20
-PILL_HEIGHT    = 49           # FIX CỨNG
-PILL1_TOP      = 8            
-PILL2_GAP      = 11           
+PILL_LEFT      = 40           # TỌA ĐỘ MỚI: Khớp chuẩn vạch guide dọc X=40
+PILL_HEIGHT    = 49           # FIX CỨNG: Khớp chuẩn khoảng Y=26 đến Y=75
+PILL1_TOP      = 26           # TỌA ĐỘ MỚI: Khớp chuẩn vạch guide ngang Y=26
+PILL2_GAP      = 20           # TỌA ĐỘ MỚI: Khớp chuẩn khoảng cách từ Y=75 đến Y=95
 MAX_PILL_RIGHT = 580          # pill không vượt quá x=580
 MIN_PILL_WIDTH = 100          # pill tối thiểu 100px
 
