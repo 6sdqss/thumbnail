@@ -1,11 +1,11 @@
 """
-image_processor.py v8
+image_processor.py v8.1
 ═════════════════════
-- Pill DYNAMIC WIDTH theo text (ngắn=ngắn, dài=dài)
+- Pill DYNAMIC WIDTH theo text (ngắn=ngắn, dài=dài) - Fix chuẩn textlength
 - Pill HEIGHT FIX CỨNG (49px khớp PS)
 - Supersampling 4× cho viền nét mịn
 - Font picker (chọn family)
-- Montserrat Bold 20.5pt mặc định (khớp PS)
+- Căn giữa dọc tuyệt đối bằng anchor="lm" (Chống xệ chữ)
 """
 from __future__ import annotations
 
@@ -25,14 +25,14 @@ CANVAS_SIZE = 600
 DEFAULT_TOP_MARGIN = 155
 DEFAULT_BOTTOM_MARGIN = 55
 DEFAULT_SIDE_PADDING = 40
-DEFAULT_FONT_SIZE = 22.2      # khớp PS 20.5pt
-DEFAULT_TEXT_PADDING = 26     # khớp PS X=46 - pill_left=20
+DEFAULT_FONT_SIZE = 24.0      # Đã điều chỉnh cho thoáng
+DEFAULT_TEXT_PADDING = 25     # Padding 2 bên chuẩn
 
 PILL_LEFT      = 20
-PILL_HEIGHT    = 49           # FIX CỨNG từ asset gốc
-PILL1_TOP      = 15           # từ asset gốc
-PILL2_GAP      = 14           # 78-64 = 14 (từ asset)
-MAX_PILL_RIGHT = 520          # pill không vượt quá x=520 (cách mép phải 80px)
+PILL_HEIGHT    = 49           # FIX CỨNG
+PILL1_TOP      = 8            
+PILL2_GAP      = 11           
+MAX_PILL_RIGHT = 580          # pill không vượt quá x=580
 MIN_PILL_WIDTH = 100          # pill tối thiểu 100px
 
 
@@ -158,7 +158,7 @@ def list_available_fonts() -> Dict[str, str]:
             if "italic" in fn.lower() or fn.lower().startswith("ofl"): continue
             name = os.path.splitext(fn)[0].replace("-VariableFont_wght","")
             fonts[name] = os.path.join(fd, fn)
-    prio = ["Montserrat-Bold","Montserrat-Black",
+    prio = ["Montserrat-ExtraBold","Montserrat-Black","Montserrat-Bold",
             "MontserratAlternates-Black","MontserratAlternates-ExtraBold",
             "MontserratAlternates-Bold","MontserratAlternates-Medium",
             "MontserratAlternates-Regular","Montserrat"]
@@ -175,8 +175,15 @@ def load_font(size: float, weight: int = 700, font_family: Optional[str] = None)
     cands = []
     if font_family:
         af = list_available_fonts()
-        if font_family in af: cands.append(af[font_family])
+        if font_family in af: 
+            cands.append(af[font_family])
+        else:
+            cands.append(os.path.join(_font_dir(), f"{font_family}.otf"))
+            cands.append(os.path.join(_font_dir(), f"{font_family}.ttf"))
+            
     cands.append(os.path.join(_font_dir(), "Montserrat.ttf"))
+    cands.append(os.path.join(_font_dir(), "Montserrat.otf"))
+    
     dl = _download_montserrat()
     if dl: cands.append(dl)
     cands += ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -196,8 +203,7 @@ def load_font(size: float, weight: int = 700, font_family: Optional[str] = None)
 
 # ════ PILL VỚI SHADOW (supersampled, sắc nét) ════
 def draw_pill_with_shadow(canvas, pill_box, shadow_offset=(3,4), shadow_blur=0,
-                          shadow_opacity=90, fill_color=(255,255,255)):
-    """Vẽ pill + duplicate shadow. Supersampling 4× cho viền nét."""
+                          shadow_opacity=60, fill_color=(255,255,255)):
     SS = 4
     left, top, right, bottom = pill_box
     w, h = right-left, bottom-top
@@ -208,78 +214,46 @@ def draw_pill_with_shadow(canvas, pill_box, shadow_offset=(3,4), shadow_blur=0,
 
     layer = Image.new("RGBA", (lw*SS, lh*SS), (0,0,0,0))
     d = ImageDraw.Draw(layer)
-    # Shadow pill
     d.rounded_rectangle(
         [(margin+sx)*SS, (margin+sy)*SS, (margin+sx+w)*SS, (margin+sy+h)*SS],
         radius=radius*SS, fill=(0,0,0,shadow_opacity))
-    # Pill trắng
     d.rounded_rectangle(
         [margin*SS, margin*SS, (margin+w)*SS, (margin+h)*SS],
         radius=radius*SS, fill=(*fill_color, 255))
-    # Downscale
     layer = layer.resize((lw, lh), Image.LANCZOS)
     canvas.alpha_composite(layer, (left-margin, top-margin))
 
 
-# ════ ĐO TEXT + AUTO FIT ════
-def _measure(draw, text, font):
-    bbox = draw.textbbox((0,0), text, font=font)
-    return bbox[2]-bbox[0], bbox[3]-bbox[1], bbox[1]
-
+# ════ ĐO TEXT + AUTO FIT (CHUẨN XÁC) ════
 def measure_text_width(text: str, font_size: float, font_weight: int = 700,
-                       font_family: Optional[str] = None) -> Tuple[float, float]:
-    """Đo chiều rộng và cao text (không vẽ). Dùng để tính pill width."""
-    if not text: return (0, 0)
+                       font_family: Optional[str] = None) -> float:
+    """Đo chiều rộng chuẩn xác bằng textlength"""
+    if not text: return 0.0
     tmp = Image.new("RGBA", (1,1))
     d = ImageDraw.Draw(tmp)
     f = load_font(font_size, font_weight, font_family)
-    tw, th, _ = _measure(d, text, f)
-    return (tw, th)
-
-def draw_text_in_pill(canvas, text, pill_box, font_size, font_weight=700,
-                      font_family=None, color=(0,0,0), text_padding=26):
-    """Vẽ text căn trái + căn giữa dọc trong pill_box đã biết."""
-    if not text: return font_size
-    draw = ImageDraw.Draw(canvas)
-    left, top, right, bottom = pill_box
-    f = load_font(font_size, font_weight, font_family)
-    tw, th, y_off = _measure(draw, text, f)
-    x = left + text_padding
-    y = top + (bottom - top - th) // 2 - y_off
-    draw.text((x, y), text, font=f, fill=color)
-    return font_size
+    return d.textlength(text, font=f)
 
 def calc_dynamic_pill(text: str, font_size: float, font_weight: int,
                       font_family: Optional[str], text_padding: int,
                       pill_left: int, pill_top: int, pill_height: int,
                       max_right: int, min_size: float = 9.0
                       ) -> Tuple[Tuple[int,int,int,int], float]:
-    """
-    Tính pill_box DYNAMIC WIDTH dựa theo text.
-
-    Logic:
-      1. Đo text width ở font_size gốc
-      2. pill_right = pill_left + text_padding*2 + text_width
-      3. Nếu pill_right > max_right → shrink font cho vừa
-      4. pill_right >= pill_left + MIN_PILL_WIDTH (tối thiểu)
-
-    Returns: (pill_box, font_size_used)
-    """
     if not text:
-        pw = MIN_PILL_WIDTH
-        return (pill_left, pill_top, pill_left + pw, pill_top + pill_height), font_size
+        return (pill_left, pill_top, pill_left + MIN_PILL_WIDTH, pill_top + pill_height), font_size
 
     max_text_w = max_right - pill_left - 2 * text_padding
     size = float(font_size)
 
+    # Shrink text nếu quá dài
     while size >= min_size:
-        tw, th = measure_text_width(text, size, font_weight, font_family)
-        if tw <= max_text_w and th <= pill_height - 4:
+        tw = measure_text_width(text, size, font_weight, font_family)
+        if tw <= max_text_w:
             break
         size -= 0.3
 
     used = max(size, min_size)
-    tw, _ = measure_text_width(text, used, font_weight, font_family)
+    tw = measure_text_width(text, used, font_weight, font_family)
 
     pill_w = int(tw + 2 * text_padding)
     pill_w = max(pill_w, MIN_PILL_WIDTH)
@@ -287,6 +261,21 @@ def calc_dynamic_pill(text: str, font_size: float, font_weight: int,
 
     box = (pill_left, pill_top, pill_right, pill_top + pill_height)
     return box, used
+
+def draw_text_in_pill(canvas, text, pill_box, font_size, font_weight=700,
+                      font_family=None, color=(0,0,0), text_padding=26, text_y_nudge=-1):
+    """Vẽ text bằng anchor 'lm' để ép tâm dọc tuyệt đối, chống xệ chữ."""
+    if not text: return font_size
+    draw = ImageDraw.Draw(canvas)
+    left, top, right, bottom = pill_box
+    f = load_font(font_size, font_weight, font_family)
+    
+    text_x = left + text_padding
+    center_y = top + (bottom - top) / 2
+    final_text_y = center_y + text_y_nudge
+    
+    draw.text((text_x, final_text_y), text, font=f, fill=color, anchor="lm")
+    return font_size
 
 
 # ════ CẤU HÌNH ════
@@ -296,7 +285,7 @@ class ThumbnailConfig:
     bottom_margin: int = DEFAULT_BOTTOM_MARGIN
     side_padding: int = DEFAULT_SIDE_PADDING
     font_size: float = DEFAULT_FONT_SIZE
-    font_weight: int = 700
+    font_weight: int = 800
     text_color: Tuple[int,int,int] = (0,0,0)
     text_padding: int = DEFAULT_TEXT_PADDING
     remove_bg_mode: str = "none"
@@ -314,9 +303,10 @@ class ThumbnailConfig:
     shadow_offset_x: int = 3
     shadow_offset_y: int = 4
     shadow_blur: int = 0
-    shadow_opacity: int = 90
-    # Font family
-    font_family: Optional[str] = None
+    shadow_opacity: int = 60
+    # Font & Nudge
+    font_family: Optional[str] = "Montserrat-ExtraBold"
+    text_y_nudge: int = -1 # <-- ĐÃ THÊM BIẾN NÀY ĐỂ TRÁNH CRASH
 
 
 # ════ BUILD THUMBNAIL ════
@@ -366,7 +356,7 @@ def build_thumbnail(product_image, text1, text2, background, config):
         )
         draw_pill_with_shadow(bg, pill1, sh_off, config.shadow_blur, config.shadow_opacity)
         draw_text_in_pill(bg, t1, pill1, sz1, config.font_weight,
-                          config.font_family, config.text_color, config.text_padding)
+                          config.font_family, config.text_color, config.text_padding, config.text_y_nudge)
         sizes_used.append(round(sz1, 2))
 
     if t2:
@@ -378,7 +368,7 @@ def build_thumbnail(product_image, text1, text2, background, config):
         )
         draw_pill_with_shadow(bg, pill2, sh_off, config.shadow_blur, config.shadow_opacity)
         draw_text_in_pill(bg, t2, pill2, sz2, config.font_weight,
-                          config.font_family, config.text_color, config.text_padding)
+                          config.font_family, config.text_color, config.text_padding, config.text_y_nudge)
         sizes_used.append(round(sz2, 2))
 
     info["font_sizes_used"] = sizes_used
