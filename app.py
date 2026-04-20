@@ -154,7 +154,7 @@ def _eff_df():
     return df
 
 def _cfg(pid=None):
-    g={k[4:]:st.session_state.get(f"cfg_{k}",v) for k,v in [
+    g={k:st.session_state.get(f"cfg_{k}",v) for k,v in [
         ("top_margin",155),("bottom_margin",55),("side_padding",40),
         ("product_scale",1.0),("center_mode","centroid"),("font_size",20.5)]}
     ov=st.session_state.get("overrides",{}).get(pid or "",{})
