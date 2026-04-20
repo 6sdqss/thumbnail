@@ -27,7 +27,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 
-from auth import logout_button, require_login
+from auth import require_login, logout_btn
 from image_processor import (
     CANVAS_SIZE,
     DEFAULT_BOTTOM_MARGIN,
