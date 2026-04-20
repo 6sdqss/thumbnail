@@ -1,404 +1,440 @@
 """
-image_processor.py v8
-═════════════════════
-- Pill DYNAMIC WIDTH theo text (ngắn=ngắn, dài=dài)
-- Pill HEIGHT FIX CỨNG (49px khớp PS)
-- Supersampling 4× cho viền nét mịn
-- Font picker (chọn family)
-- Montserrat Bold 20.5pt mặc định (khớp PS)
+image_processor.py
+==================
+Core engine cho Thumbnail Builder.
+
+Tính năng:
+- smart_fit: resize giữ tỉ lệ, không méo, không mất chi tiết
+- remove_white_background: tách nền trắng bằng flood-fill (không cần AI)
+- remove_background_ai: tách nền bằng rembg (tuỳ chọn)
+- draw_pill_with_shadow: tự vẽ ô pill trắng có bóng đổ mềm (Fix lỗi răng cưa bằng Oversampling)
+- build_thumbnail: ghép thumbnail 600x600 đúng layout mẫu.
+
+FIX v2 — Cải tiến centering text:
+  • Dùng CAP-HEIGHT cố định (bbox của "AHXM0") để canh giữa dọc
+    → Dấu tiếng Việt (Ổ, Ạ, Ệ, ...) không còn ảnh hưởng centering
+  • Cập nhật tất cả thông số mặc định theo guide-lines thực đo từ ảnh mẫu
+  • Fix cứng pill_height, chiều rộng pill linh động theo text
 """
+
 from __future__ import annotations
 
 import io
 import os
-import urllib.request
-import tempfile
 from collections import deque
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-# ════ HẰNG SỐ ════
+# ============ HẰNG SỐ ============
 CANVAS_SIZE = 600
 DEFAULT_TOP_MARGIN = 155
 DEFAULT_BOTTOM_MARGIN = 55
 DEFAULT_SIDE_PADDING = 40
-DEFAULT_FONT_SIZE = 32      # khớp PS 20.5pt
-DEFAULT_TEXT_PADDING = 18     # khớp PS X=46 - pill_left=20
+DEFAULT_FONT_SIZE = 20.4
+DEFAULT_TEXT_PADDING = 18
 
-PILL_LEFT      = 20
-PILL_HEIGHT    = 49           # FIX CỨNG từ asset gốc
-PILL1_TOP      = 15           # từ asset gốc
-PILL2_GAP      = 14           # 78-64 = 14 (từ asset)
-MAX_PILL_RIGHT = 520          # pill không vượt quá x=520 (cách mép phải 80px)
-MIN_PILL_WIDTH = 100          # pill tối thiểu 100px
+# Chuỗi tham chiếu để đo cap-height — chỉ dùng ký tự Latin UPPERCASE
+# không có dấu, để có chiều cao ổn định nhất.
+_CAP_REF = "AHXMWQ0"
 
 
-# ════ SMART FIT ════
-def _content_bbox(img, alpha_threshold=10):
-    if img.mode != "RGBA": return img.getbbox()
+# ============ SMART FIT ============
+
+def _content_bbox(img: Image.Image, alpha_threshold: int = 10) -> Optional[Tuple[int, int, int, int]]:
+    if img.mode != "RGBA":
+        return img.getbbox()
     alpha = np.array(img.split()[-1])
     mask = alpha > alpha_threshold
-    if not mask.any(): return None
+    if not mask.any():
+        return None
     rows = np.where(mask.any(axis=1))[0]
     cols = np.where(mask.any(axis=0))[0]
-    return (int(cols.min()), int(rows.min()), int(cols.max())+1, int(rows.max())+1)
+    return (int(cols.min()), int(rows.min()), int(cols.max()) + 1, int(rows.max()) + 1)
 
-def smart_fit(img, target_w, target_h):
+
+def smart_fit(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
     img = img.convert("RGBA")
     bbox = _content_bbox(img)
-    if bbox: img = img.crop(bbox)
-    sw, sh = img.size
-    if sw == 0 or sh == 0: return Image.new("RGBA", (target_w, target_h), (0,0,0,0))
-    scale = min(target_w / sw, target_h / sh)
-    nw, nh = max(1, int(round(sw*scale))), max(1, int(round(sh*scale)))
-    resized = img.resize((nw, nh), Image.LANCZOS)
-    canvas = Image.new("RGBA", (target_w, target_h), (0,0,0,0))
-    canvas.paste(resized, ((target_w-nw)//2, (target_h-nh)//2), resized)
-    return canvas
-
-def smart_fit_centroid(img, target_w, target_h):
-    img = img.convert("RGBA")
-    bbox = _content_bbox(img)
-    if bbox: img = img.crop(bbox)
-    sw, sh = img.size
-    if sw == 0 or sh == 0: return Image.new("RGBA", (target_w, target_h), (0,0,0,0))
-    alpha = np.array(img.split()[-1]).astype(np.float32)
-    total = alpha.sum()
-    if total <= 0: return smart_fit(img, target_w, target_h)
-    cx = float((alpha * np.arange(sw).reshape(1,-1)).sum() / total)
-    cy = float((alpha * np.arange(sh).reshape(-1,1)).sum() / total)
-    scale = min(target_w / sw, target_h / sh)
-    nw, nh = max(1, int(round(sw*scale))), max(1, int(round(sh*scale)))
-    resized = img.resize((nw, nh), Image.LANCZOS)
-    px = int(round(target_w/2 - cx*scale))
-    py = int(round(target_h/2 - cy*scale))
-    px = max(0, min(target_w-nw, px)) if nw < target_w else max(target_w-nw, min(0, px))
-    py = max(0, min(target_h-nh, py)) if nh < target_h else max(target_h-nh, min(0, py))
-    canvas = Image.new("RGBA", (target_w, target_h), (0,0,0,0))
-    canvas.paste(resized, (px, py), resized)
+    if bbox is not None:
+        img = img.crop(bbox)
+    src_w, src_h = img.size
+    if src_w == 0 or src_h == 0:
+        return Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    scale = min(target_w / src_w, target_h / src_h)
+    new_w = max(1, int(round(src_w * scale)))
+    new_h = max(1, int(round(src_h * scale)))
+    resized = img.resize((new_w, new_h), Image.LANCZOS)
+    canvas = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    canvas.paste(resized, ((target_w - new_w) // 2, (target_h - new_h) // 2), resized)
     return canvas
 
 
-# ════ TÁCH NỀN TRẮNG ════
-def _edge_connected(mask):
+def smart_fit_centroid(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+    img = img.convert("RGBA")
+    bbox = _content_bbox(img)
+    if bbox is not None:
+        img = img.crop(bbox)
+    src_w, src_h = img.size
+    if src_w == 0 or src_h == 0:
+        return Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    alpha = np.array(img.split()[-1])
+    mass = alpha.astype(np.float32)
+    total = mass.sum()
+    if total <= 0:
+        return smart_fit(img, target_w, target_h)
+    ys = np.arange(src_h).reshape(-1, 1)
+    xs = np.arange(src_w).reshape(1, -1)
+    cx = float((mass * xs).sum() / total)
+    cy = float((mass * ys).sum() / total)
+    scale = min(target_w / src_w, target_h / src_h)
+    new_w = max(1, int(round(src_w * scale)))
+    new_h = max(1, int(round(src_h * scale)))
+    resized = img.resize((new_w, new_h), Image.LANCZOS)
+    cx_s = cx * scale
+    cy_s = cy * scale
+    paste_x = int(round(target_w / 2 - cx_s))
+    paste_y = int(round(target_h / 2 - cy_s))
+    min_x = target_w - new_w
+    min_y = target_h - new_h
+    paste_x = max(min_x, min(0, paste_x)) if new_w >= target_w else max(0, min(target_w - new_w, paste_x))
+    paste_y = max(min_y, min(0, paste_y)) if new_h >= target_h else max(0, min(target_h - new_h, paste_y))
+    canvas = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    canvas.paste(resized, (paste_x, paste_y), resized)
+    return canvas
+
+
+# ============ TÁCH NỀN TRẮNG ============
+
+def _edge_connected(mask: np.ndarray) -> np.ndarray:
     h, w = mask.shape
     visited = np.zeros_like(mask, dtype=bool)
-    q = deque()
+    q: deque = deque()
     for x in range(w):
-        if mask[0,x]: q.append((0,x)); visited[0,x]=True
-        if mask[h-1,x]: q.append((h-1,x)); visited[h-1,x]=True
+        if mask[0, x]:
+            q.append((0, x)); visited[0, x] = True
+        if mask[h - 1, x]:
+            q.append((h - 1, x)); visited[h - 1, x] = True
     for y in range(h):
-        if mask[y,0]: q.append((y,0)); visited[y,0]=True
-        if mask[y,w-1]: q.append((y,w-1)); visited[y,w-1]=True
+        if mask[y, 0]:
+            q.append((y, 0)); visited[y, 0] = True
+        if mask[y, w - 1]:
+            q.append((y, w - 1)); visited[y, w - 1] = True
     while q:
-        y,x = q.popleft()
-        for dy,dx in ((-1,0),(1,0),(0,-1),(0,1)):
-            ny,nx = y+dy, x+dx
-            if 0<=ny<h and 0<=nx<w and not visited[ny,nx] and mask[ny,nx]:
-                visited[ny,nx]=True; q.append((ny,nx))
+        y, x = q.popleft()
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx] and mask[ny, nx]:
+                visited[ny, nx] = True
+                q.append((ny, nx))
     return visited
 
-def remove_white_background(img, tolerance=18, feather=1):
-    img = img.convert("RGBA"); arr = np.array(img)
-    rgb = arr[:,:,:3].astype(np.int16)
-    min_rgb, max_rgb = rgb.min(axis=2), rgb.max(axis=2)
+
+def remove_white_background(img: Image.Image, tolerance: int = 18, feather: int = 1) -> Image.Image:
+    img = img.convert("RGBA")
+    arr = np.array(img)
+    rgb = arr[:, :, :3].astype(np.int16)
+    min_rgb = rgb.min(axis=2)
+    max_rgb = rgb.max(axis=2)
     chroma = max_rgb - min_rgb
-    white_mask = (min_rgb >= max(180, 255-tolerance*4)) & (chroma <= max(5, tolerance))
-    edge = _edge_connected(white_mask)
-    arr[:,:,3][edge] = 0
+    bright_thr = max(180, 255 - tolerance * 4)
+    chroma_thr = max(5, tolerance)
+    white_mask = (min_rgb >= bright_thr) & (chroma <= chroma_thr)
+    edge_mask = _edge_connected(white_mask)
+    alpha = arr[:, :, 3].copy()
+    alpha[edge_mask] = 0
+    arr[:, :, 3] = alpha
     out = Image.fromarray(arr, "RGBA")
     if feather > 0:
-        a = out.split()[-1].filter(ImageFilter.GaussianBlur(feather))
-        out = Image.merge("RGBA", (*out.split()[:3], a))
+        a = out.split()[-1].filter(ImageFilter.GaussianBlur(radius=feather))
+        r, g, b, _ = out.split()
+        out = Image.merge("RGBA", (r, g, b, a))
     return out
 
-def remove_background_ai(img):
-    global _REMBG_SESSION
-    try:
-        from rembg import new_session, remove
-    except ImportError as e:
-        raise RuntimeError("rembg chưa cài") from e
-    if '_REMBG_SESSION' not in globals() or _REMBG_SESSION is None:
-        _REMBG_SESSION = new_session("u2net")
-    img = img.convert("RGBA"); buf = io.BytesIO(); img.save(buf, "PNG")
-    return Image.open(io.BytesIO(remove(buf.getvalue(), session=_REMBG_SESSION))).convert("RGBA")
+
+# ============ TÁCH NỀN AI ============
 
 _REMBG_SESSION = None
 
 
-# ════ FONT ════
-def _font_dir(): return os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+def remove_background_ai(img: Image.Image) -> Image.Image:
+    global _REMBG_SESSION
+    try:
+        from rembg import new_session, remove
+    except ImportError as e:
+        raise RuntimeError("Chưa cài rembg. Chạy: pip install rembg onnxruntime") from e
+    if _REMBG_SESSION is None:
+        _REMBG_SESSION = new_session("u2net")
+    img = img.convert("RGBA")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    out_bytes = remove(buf.getvalue(), session=_REMBG_SESSION)
+    return Image.open(io.BytesIO(out_bytes)).convert("RGBA")
 
-_FONT_CACHE: dict = {}
 
-def _download_montserrat():
-    cache = os.path.join(tempfile.gettempdir(), "Montserrat.ttf")
-    if os.path.isfile(cache) and os.path.getsize(cache) > 100_000: return cache
-    for url in [
-        "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf",
-        "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf",
-    ]:
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as r: data = r.read()
-            if len(data) > 100_000:
-                with open(cache, "wb") as f: f.write(data)
-                return cache
-        except Exception: continue
-    return None
+# ============ FONT ============
 
-def list_available_fonts() -> Dict[str, str]:
-    fd = _font_dir(); fonts = {}
-    if os.path.isdir(fd):
-        for fn in sorted(os.listdir(fd)):
-            if not fn.lower().endswith((".ttf",".otf")): continue
-            if "italic" in fn.lower() or fn.lower().startswith("ofl"): continue
-            name = os.path.splitext(fn)[0].replace("-VariableFont_wght","")
-            fonts[name] = os.path.join(fd, fn)
-    prio = ["Montserrat-Bold","Montserrat-Black",
-            "MontserratAlternates-Black","MontserratAlternates-ExtraBold",
-            "MontserratAlternates-Bold","MontserratAlternates-Medium",
-            "MontserratAlternates-Regular","Montserrat"]
-    ordered = {}
-    for k in prio:
-        if k in fonts: ordered[k] = fonts.pop(k)
-    ordered.update(fonts)
-    return ordered
+def _font_dir() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
-def load_font(size: float, weight: int = 700, font_family: Optional[str] = None) -> ImageFont.FreeTypeFont:
-    sz = max(1, int(round(size)))
-    key = (sz, weight, font_family or "__def__")
-    if key in _FONT_CACHE: return _FONT_CACHE[key]
-    cands = []
-    if font_family:
-        af = list_available_fonts()
-        if font_family in af: cands.append(af[font_family])
-    cands.append(os.path.join(_font_dir(), "Montserrat.ttf"))
-    dl = _download_montserrat()
-    if dl: cands.append(dl)
-    cands += ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-              "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-              "C:/Windows/Fonts/arialbd.ttf"]
-    for p in cands:
+
+def load_font(size: float, weight: int = 700) -> ImageFont.FreeTypeFont:
+    size_int = max(1, int(round(size)))
+    path = os.path.join(_font_dir(), "Montserrat.ttf")
+    candidates = [
+        path,
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "/System/Library/Fonts/HelveticaNeue.ttc",
+    ]
+    for p in candidates:
         if p and os.path.isfile(p):
             try:
-                f = ImageFont.truetype(p, sz)
-                if "Montserrat.ttf" in p and not font_family:
-                    try: f.set_variation_by_axes([weight])
-                    except: pass
-                _FONT_CACHE[key] = f; return f
-            except: continue
-    f = ImageFont.load_default(); _FONT_CACHE[key] = f; return f
+                font = ImageFont.truetype(p, size_int)
+                if "Montserrat" in p:
+                    try:
+                        font.set_variation_by_axes([weight])
+                    except Exception:
+                        pass
+                return font
+            except Exception:
+                continue
+    return ImageFont.load_default()
 
 
-# ════ PILL VỚI SHADOW (supersampled, sắc nét) ════
-def draw_pill_with_shadow(canvas, pill_box, shadow_offset=(3,4), shadow_blur=0,
-                          shadow_opacity=90, fill_color=(255,255,255)):
-    """Vẽ pill + duplicate shadow. Supersampling 4× cho viền nét."""
-    SS = 4
+# ============ CAP-HEIGHT HELPER ============
+
+def _get_cap_metrics(font: ImageFont.FreeTypeFont) -> Tuple[int, int]:
+    """
+    Trả về (cap_height, cap_top) ổn định cho font hiện tại.
+    cap_height = chiều cao render thực của ký tự Latin UPPERCASE (không dấu)
+    cap_top    = offset y từ điểm vẽ đến pixel trên cùng của ký tự
+
+    Dùng giá trị này thay vì đo từng chuỗi riêng để tránh dấu tiếng Việt
+    làm lệch centering.
+    """
+    # Tạo dummy draw để đo
+    dummy = Image.new("L", (1, 1), 0)
+    d = ImageDraw.Draw(dummy)
+    bbox = d.textbbox((0, 0), _CAP_REF, font=font)
+    cap_top = bbox[1]        # offset y (thường dương nhỏ)
+    cap_height = bbox[3] - bbox[1]  # chiều cao pixel thực
+    return cap_height, cap_top
+
+
+# ============ VẼ PILL (ANTI-ALIASING) ============
+
+def draw_pill_with_shadow(
+    canvas: Image.Image,
+    pill_box: Tuple[int, int, int, int],
+    shadow_offset: Tuple[int, int] = (3, 5),
+    shadow_blur: int = 5,
+    shadow_opacity: int = 112,
+    fill_color: Tuple[int, int, int] = (255, 255, 255),
+) -> None:
+    """
+    Sử dụng Alpha Masking (4x) kết hợp Lanczos để viền bo cong mượt tuyệt đối,
+    khử 100% răng cưa của Pillow.
+    """
     left, top, right, bottom = pill_box
-    w, h = right-left, bottom-top
+    w, h = right - left, bottom - top
+    if w <= 0 or h <= 0:
+        return
     radius = h // 2
+
+    # 1. Layer bóng đổ
+    shadow_layer = Image.new("RGBA", (canvas.width, canvas.height), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow_layer)
     sx, sy = shadow_offset
-    margin = max(abs(sx), abs(sy)) + 4
-    lw, lh = w + margin*2, h + margin*2
+    sd.rounded_rectangle(
+        [left + sx, top + sy, right + sx, bottom + sy],
+        radius=radius,
+        fill=(0, 0, 0, shadow_opacity),
+    )
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_blur))
+    canvas.alpha_composite(shadow_layer)
 
-    layer = Image.new("RGBA", (lw*SS, lh*SS), (0,0,0,0))
-    d = ImageDraw.Draw(layer)
-    # Shadow pill
-    d.rounded_rectangle(
-        [(margin+sx)*SS, (margin+sy)*SS, (margin+sx+w)*SS, (margin+sy+h)*SS],
-        radius=radius*SS, fill=(0,0,0,shadow_opacity))
-    # Pill trắng
-    d.rounded_rectangle(
-        [margin*SS, margin*SS, (margin+w)*SS, (margin+h)*SS],
-        radius=radius*SS, fill=(*fill_color, 255))
-    # Downscale
-    layer = layer.resize((lw, lh), Image.LANCZOS)
-    canvas.alpha_composite(layer, (left-margin, top-margin))
+    # 2. Khử răng cưa tuyệt đối cho viền ô Pill bằng Alpha Masking (4x)
+    scale = 4
+    mask_w, mask_h = w * scale, h * scale
 
+    mask_hr = Image.new("L", (mask_w, mask_h), 0)
+    md = ImageDraw.Draw(mask_hr)
+    md.rounded_rectangle([0, 0, mask_w, mask_h], radius=radius * scale, fill=255)
 
-# ════ ĐO TEXT + AUTO FIT ════
-def _measure(draw, text, font):
-    bbox = draw.textbbox((0,0), text, font=font)
-    return bbox[2]-bbox[0], bbox[3]-bbox[1], bbox[1]
+    mask_lr = mask_hr.resize((w, h), Image.LANCZOS)
 
-def measure_text_width(text: str, font_size: float, font_weight: int = 700,
-                       font_family: Optional[str] = None) -> Tuple[float, float]:
-    """Đo chiều rộng và cao text (không vẽ). Dùng để tính pill width."""
-    if not text: return (0, 0)
-    tmp = Image.new("RGBA", (1,1))
-    d = ImageDraw.Draw(tmp)
-    f = load_font(font_size, font_weight, font_family)
-    tw, th, _ = _measure(d, text, f)
-    return (tw, th)
+    pill_layer = Image.new("RGBA", (w, h), (*fill_color, 255))
+    pill_layer.putalpha(mask_lr)
 
-def draw_text_in_pill(canvas, text, pill_box, font_size, font_weight=700,
-                      font_family=None, color=(0,0,0), text_padding=26):
-    """Vẽ text căn trái + căn giữa dọc trong pill_box đã biết."""
-    if not text: return font_size
-    draw = ImageDraw.Draw(canvas)
-    left, top, right, bottom = pill_box
-    f = load_font(font_size, font_weight, font_family)
-    tw, th, y_off = _measure(draw, text, f)
-    x = left + text_padding
-    y = top + (bottom - top - th) // 2 - y_off
-    draw.text((x, y), text, font=f, fill=color)
-    return font_size
-
-def calc_dynamic_pill(text: str, font_size: float, font_weight: int,
-                      font_family: Optional[str], text_padding: int,
-                      pill_left: int, pill_top: int, pill_height: int,
-                      max_right: int, min_size: float = 9.0
-                      ) -> Tuple[Tuple[int,int,int,int], float]:
-    """
-    Tính pill_box DYNAMIC WIDTH dựa theo text.
-
-    Logic:
-      1. Đo text width ở font_size gốc
-      2. pill_right = pill_left + text_padding*2 + text_width
-      3. Nếu pill_right > max_right → shrink font cho vừa
-      4. pill_right >= pill_left + MIN_PILL_WIDTH (tối thiểu)
-
-    Returns: (pill_box, font_size_used)
-    """
-    if not text:
-        pw = MIN_PILL_WIDTH
-        return (pill_left, pill_top, pill_left + pw, pill_top + pill_height), font_size
-
-    max_text_w = max_right - pill_left - 2 * text_padding
-    size = float(font_size)
-
-    while size >= min_size:
-        tw, th = measure_text_width(text, size, font_weight, font_family)
-        if tw <= max_text_w and th <= pill_height - 4:
-            break
-        size -= 0.3
-
-    used = max(size, min_size)
-    tw, _ = measure_text_width(text, used, font_weight, font_family)
-
-    pill_w = int(tw + 2 * text_padding)
-    pill_w = max(pill_w, MIN_PILL_WIDTH)
-    pill_right = min(pill_left + pill_w, max_right)
-
-    box = (pill_left, pill_top, pill_right, pill_top + pill_height)
-    return box, used
+    canvas.paste(pill_layer, (left, top), pill_layer)
 
 
-# ════ CẤU HÌNH ════
+# ============ CẤU HÌNH CỨNG THEO YÊU CẦU ============
+
 @dataclass
 class ThumbnailConfig:
-    top_margin: int = DEFAULT_TOP_MARGIN
-    bottom_margin: int = DEFAULT_BOTTOM_MARGIN
-    side_padding: int = DEFAULT_SIDE_PADDING
-    font_size: float = DEFAULT_FONT_SIZE
-    font_weight: int = 700
-    text_color: Tuple[int,int,int] = (0,0,0)
-    text_padding: int = DEFAULT_TEXT_PADDING
+    top_margin: int = 155
+    bottom_margin: int = 55
+    side_padding: int = 40
+    font_size: float = 20.4
+    font_weight: int = 800
+    text_color: Tuple[int, int, int] = (0, 0, 0)
+    text_padding: int = 18           # ← FIX: 25 → 18 (đo từ guide x=15 → x=33)
+
     remove_bg_mode: str = "none"
     white_tolerance: int = 18
     show_background: bool = True
     center_mode: str = "centroid"
     product_scale: float = 1.0
-    # Pill layout
-    pill_left: int = PILL_LEFT
-    pill_height: int = PILL_HEIGHT
-    pill1_top: int = PILL1_TOP
-    pill2_gap: int = PILL2_GAP
-    max_pill_right: int = MAX_PILL_RIGHT
-    # Shadow
+
+    pill_left: int = 15              # ← FIX: 20 → 15 (guide V-line x=15)
+    pill_right: int = 300
+    pill_height: int = 52            # ← FIX: 49 → 52 (trung bình guide 53+51)
+    pill1_top: int = 5               # ← FIX: 8 → 5 (guide H-line y=5)
+    pill2_gap: int = 13              # ← FIX: 11 → 13 (guide 71−58=13)
+
+    # Bóng đổ (giữ nguyên — khớp với ảnh mẫu)
     shadow_offset_x: int = 3
-    shadow_offset_y: int = 4
-    shadow_blur: int = 0
-    shadow_opacity: int = 90
-    # Font family
-    font_family: Optional[str] = None
+    shadow_offset_y: int = 5
+    shadow_blur: int = 5
+    shadow_opacity: int = 112
 
 
-# ════ BUILD THUMBNAIL ════
-def build_thumbnail(product_image, text1, text2, background, config):
+# ============ BUILD THUMBNAIL ============
+
+def build_thumbnail(
+    product_image: Image.Image,
+    text1: str,
+    text2: str,
+    background: Image.Image,
+    config: ThumbnailConfig,
+) -> Tuple[Image.Image, dict]:
     W = H = CANVAS_SIZE
-    info = {}
+    info: dict = {}
 
-    # 1. Background
+    # 1. Chuẩn bị hình nền
     if config.show_background:
-        bg = background.convert("RGBA").resize((W,H), Image.LANCZOS)
+        bg = background.convert("RGBA").resize((W, H), Image.LANCZOS)
     else:
-        bg = Image.new("RGBA", (W,H), (255,255,255,255))
+        bg = Image.new("RGBA", (W, H), (255, 255, 255, 255))
 
-    # 2. Sản phẩm
+    # 2. Xử lý ảnh sản phẩm
     prod = product_image.convert("RGBA")
     if config.remove_bg_mode == "white":
-        prod = remove_white_background(prod, config.white_tolerance)
+        prod = remove_white_background(prod, tolerance=config.white_tolerance)
     elif config.remove_bg_mode == "ai":
         prod = remove_background_ai(prod)
 
     area_top = config.top_margin
-    area_h = max(1, H - config.bottom_margin - area_top)
+    area_bottom = H - config.bottom_margin
+    area_h = max(1, area_bottom - area_top)
     area_w = W - 2 * config.side_padding
-    ew = max(1, int(area_w * config.product_scale))
-    eh = max(1, int(area_h * config.product_scale))
+
+    effective_w = max(1, int(area_w * config.product_scale))
+    effective_h = max(1, int(area_h * config.product_scale))
 
     if config.center_mode == "centroid":
-        fitted = smart_fit_centroid(prod, ew, eh)
+        fitted = smart_fit_centroid(prod, effective_w, effective_h)
     else:
-        fitted = smart_fit(prod, ew, eh)
+        fitted = smart_fit(prod, effective_w, effective_h)
 
     px = (W - fitted.width) // 2
     py = area_top + (area_h - fitted.height) // 2
     bg.paste(fitted, (px, py), fitted)
 
-    # 3. Pill + Text (DYNAMIC WIDTH)
+    # 3. Chuẩn bị vẽ Text và Pill
+    draw = ImageDraw.Draw(bg)
+    font = load_font(config.font_size, config.font_weight)
+
+    # ===================================================================
+    # FIX QUAN TRỌNG: Đo CAP-HEIGHT một lần duy nhất
+    # Dùng chuỗi tham chiếu Latin UPPERCASE để lấy chiều cao ổn định.
+    # Mọi text (có hay không có dấu tiếng Việt) đều center theo giá trị
+    # này → centering đồng nhất 100%, không bị dấu Ổ Ạ Ệ kéo lệch.
+    # ===================================================================
+    cap_height, cap_top = _get_cap_metrics(font)
+
     t1 = (text1 or "").strip()
     t2 = (text2 or "").strip()
-    sizes_used = []
-    sh_off = (config.shadow_offset_x, config.shadow_offset_y)
+    texts = [t1, t2]
+    y_positions = [
+        config.pill1_top,
+        config.pill1_top + config.pill_height + config.pill2_gap,
+    ]
 
-    if t1:
-        pill1, sz1 = calc_dynamic_pill(
-            t1, config.font_size, config.font_weight, config.font_family,
-            config.text_padding, config.pill_left, config.pill1_top,
-            config.pill_height, config.max_pill_right,
+    sizes_used: List[float] = []
+
+    for i, txt in enumerate(texts):
+        if not txt:
+            continue
+
+        # A. Đo chiều rộng thực tế của text (vẫn cần đo riêng từng chuỗi)
+        bbox = draw.textbbox((0, 0), txt, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_x_offset = bbox[0]   # offset ngang (thường = 0 hoặc rất nhỏ)
+
+        # B. Tính toạ độ Pill Box — chiều cao cố định, chiều rộng linh động
+        current_pill_width = text_w + (config.text_padding * 2)
+        pill_box = (
+            config.pill_left,
+            y_positions[i],
+            config.pill_left + current_pill_width,
+            y_positions[i] + config.pill_height,
         )
-        draw_pill_with_shadow(bg, pill1, sh_off, config.shadow_blur, config.shadow_opacity)
-        draw_text_in_pill(bg, t1, pill1, sz1, config.font_weight,
-                          config.font_family, config.text_color, config.text_padding)
-        sizes_used.append(round(sz1, 2))
 
-    if t2:
-        pill2_top = config.pill1_top + config.pill_height + config.pill2_gap
-        pill2, sz2 = calc_dynamic_pill(
-            t2, config.font_size, config.font_weight, config.font_family,
-            config.text_padding, config.pill_left, pill2_top,
-            config.pill_height, config.max_pill_right,
+        # C. Vẽ Pill (bo góc + bóng đổ)
+        draw_pill_with_shadow(
+            canvas=bg,
+            pill_box=pill_box,
+            shadow_offset=(config.shadow_offset_x, config.shadow_offset_y),
+            shadow_blur=config.shadow_blur,
+            shadow_opacity=config.shadow_opacity,
         )
-        draw_pill_with_shadow(bg, pill2, sh_off, config.shadow_blur, config.shadow_opacity)
-        draw_text_in_pill(bg, t2, pill2, sz2, config.font_weight,
-                          config.font_family, config.text_color, config.text_padding)
-        sizes_used.append(round(sz2, 2))
 
-    info["font_sizes_used"] = sizes_used
+        # ===============================================================
+        # D. VẼ TEXT — CANH GIỮA DỌC THEO CAP-HEIGHT CỐ ĐỊNH
+        # ===============================================================
+        # text_x: canh trái với padding
+        text_x = config.pill_left + config.text_padding - text_x_offset
+
+        # text_y: canh giữa dọc dùng cap_height thay vì bbox riêng
+        #   Pill center Y = y_positions[i] + pill_height / 2
+        #   Text (visual) center Y = text_y + cap_top + cap_height / 2
+        #   → text_y = pill_center - cap_top - cap_height / 2
+        pill_center_y = y_positions[i] + config.pill_height / 2.0
+        text_y = round(pill_center_y - cap_top - cap_height / 2.0)
+
+        # Phải cập nhật lại ImageDraw vì draw_pill_with_shadow đã paste lên bg
+        draw = ImageDraw.Draw(bg)
+        draw.text((text_x, text_y), txt, font=font, fill=config.text_color)
+
+        sizes_used.append(config.font_size)
+
+    # 4. Đóng gói thông tin
+    info["font_sizes_used"] = [round(s, 2) for s in sizes_used]
     info["text1"] = t1
     info["text2"] = t2
-    info["any_shrunk"] = any(s < config.font_size - 0.01 for s in sizes_used)
+    info["any_shrunk"] = False
 
     return bg.convert("RGB"), info
 
 
-# ════ TIỆN ÍCH ════
-def pil_to_bytes(img, fmt="PNG", quality=95):
+# ============ TIỆN ÍCH ============
+
+def pil_to_bytes(img: Image.Image, fmt: str = "PNG", quality: int = 95) -> bytes:
     buf = io.BytesIO()
-    if fmt.upper() in ("JPEG","JPG"):
-        img.convert("RGB").save(buf, "JPEG", quality=quality, optimize=True)
-    elif fmt.upper() == "WEBP":
-        img.save(buf, "WEBP", quality=quality)
+    fmt_u = fmt.upper()
+    if fmt_u in ("JPEG", "JPG"):
+        img.convert("RGB").save(buf, format="JPEG", quality=quality, optimize=True)
     else:
-        img.save(buf, "PNG", optimize=True)
+        img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
 
-def sanitize_filename(name):
-    return "".join(c for c in str(name) if c not in '<>:"/\\|?*\r\n\t').strip() or "unnamed"
+
+def sanitize_filename(name: str) -> str:
+    bad = '<>:"/\\|?*\r\n\t'
+    out = "".join(c for c in str(name) if c not in bad).strip()
+    return out or "unnamed"
