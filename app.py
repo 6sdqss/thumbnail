@@ -1,483 +1,634 @@
 """
-app.py — Thumbnail Builder Pro v8
-Dark theme · Dynamic pill width · Khớp PS
+app.py — Thumbnail Builder Pro
+==============================
+Streamlit web app tạo thumbnail sản phẩm 600x600 hàng loạt.
+
+Quy trình sử dụng:
+  1. Đăng nhập
+  2. Upload file Excel (cột: id, text1, text2) + folder/nhiều ảnh sản phẩm
+  3. App tự khớp ảnh theo id, preview thumbnail trong grid
+  4. Chỉnh margin, font, weight, tách nền, ... bằng sidebar (live preview)
+  5. Download ZIP chứa tất cả thumbnail + file CSV CMS
+
+Để ẩn code khi deploy: push lên GitHub PRIVATE rồi connect Streamlit Cloud.
+Người dùng cuối chỉ thấy UI, không thấy source.
 """
+
 from __future__ import annotations
-import io, json, time, zipfile
+
+import io
+import os
+import time
+import zipfile
 from pathlib import Path
-from typing import Dict, List
-import numpy as np
+from typing import Dict, List, Optional, Tuple
+
 import pandas as pd
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFilter, UnidentifiedImageError
+from PIL import Image
+
+from auth import logout_button, require_login
 from image_processor import (
-    CANVAS_SIZE, ThumbnailConfig, build_thumbnail,
-    pil_to_bytes, sanitize_filename, list_available_fonts, measure_text_width,
+    CANVAS_SIZE,
+    DEFAULT_BOTTOM_MARGIN,
+    DEFAULT_FONT_SIZE,
+    DEFAULT_TOP_MARGIN,
+    ThumbnailConfig,
+    build_thumbnail,
+    pil_to_bytes,
+    sanitize_filename,
 )
-from auth import require_login, logout_btn
 
-# ═══ HẰNG SỐ (khớp PS) ═══
-SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 90
-FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 16
-DEFAULT_FONT_FAMILY = "Montserrat-Extra Bold"
-DEFAULT_FONT_SIZE = 32
-PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 14
-MAX_PILL_RIGHT = 520
-MAX_UPLOAD_DIM, MAX_UPLOAD_MB, MIN_SRC_DIM = 1600, 20, 400
-SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
-APP_VERSION = "8.0"
+# ============ CẤU HÌNH TRANG ============
+st.set_page_config(
+    page_title="Thumbnail Builder Pro",
+    page_icon="🖼️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        "About": "Thumbnail Builder Pro — Tạo thumbnail 600×600 hàng loạt.",
+    },
+)
 
-def _fallback_bg(sz=600):
-    bg = Image.new("RGBA",(sz,sz),(255,255,255,255))
-    a = np.array(bg,dtype=np.float32); h = int(sz*.78)
-    for c in range(3): a[h:,:,c] *= np.linspace(1,.93,sz-h)[:,None]
-    bg = Image.fromarray(np.clip(a,0,255).astype(np.uint8),"RGBA")
-    s = Image.new("RGBA",(sz,sz),(0,0,0,0))
-    ImageDraw.Draw(s).ellipse([sz//2-210,int(sz*.82)-24,sz//2+210,int(sz*.82)+24],fill=(0,0,0,35))
-    bg.alpha_composite(s.filter(ImageFilter.GaussianBlur(8))); return bg
+# Ẩn menu & footer mặc định của Streamlit cho gọn
+st.markdown(
+    """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header [data-testid="stToolbar"] {visibility: hidden;}
+    .block-container {padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px;}
+    /* Card styling */
+    .stat-card {
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 14px 18px;
+    }
+    .stat-card h3 {margin: 0; color: #0f172a; font-size: 28px;}
+    .stat-card p {margin: 0; color: #64748b; font-size: 13px;}
+    /* Preview tile */
+    .thumb-tile {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 10px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        margin-bottom: 8px;
+    }
+    .thumb-tile img {border-radius: 8px; width: 100%; display:block;}
+    .thumb-id {font-weight: 700; font-size: 14px; color: #111827;}
+    .thumb-meta {font-size: 12px; color: #6b7280; margin-top: 4px;}
+    /* Action bar */
+    .stButton>button {border-radius: 10px; font-weight: 600;}
+    .stDownloadButton>button {
+        border-radius: 10px; font-weight: 700;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: white; border: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# ═══ PAGE ═══
-st.set_page_config(page_title="Thumbnail Builder Pro", page_icon="🖼️", layout="wide",
-                   initial_sidebar_state="expanded")
+# ============ LOGIN GATE ============
+if not require_login():
+    st.stop()
 
-st.markdown("""
-<style>
-  .block-container{padding-top:3.5rem !important;max-width:1500px;}
-  #MainMenu,footer{visibility:hidden;}
+# ============ HELPERS ============
+ASSETS_DIR = Path(__file__).parent / "assets"
 
-  /* Dark enhancements */
-  .stButton>button{border-radius:10px !important;font-weight:600 !important;}
-  .stButton>button[kind="primary"]{
-    background:linear-gradient(135deg,#7c3aed,#8b5cf6) !important;border:none !important;}
-  .stDownloadButton>button{
-    border-radius:10px !important;font-weight:700 !important;
-    background:linear-gradient(135deg,#10b981,#059669) !important;
-    color:#fff !important;border:none !important;}
-
-  .stTabs [data-baseweb="tab-list"]{gap:4px;}
-  .stTabs [data-baseweb="tab"]{font-weight:700;font-size:13px;padding:10px 18px;}
-
-  [data-testid="stMetricValue"]{font-size:26px !important;font-weight:800 !important;}
-  [data-testid="stFileUploader"] section{
-    border:2px dashed #4c1d95 !important;border-radius:12px !important;}
-</style>
-""", unsafe_allow_html=True)
-
-if not require_login(): st.stop()
-
-# ═══ PATHS ═══
-_DIR = Path(__file__).resolve().parent
-_ASSETS = _DIR / "assets"
 
 @st.cache_resource(show_spinner=False)
-def _bg():
-    p = _ASSETS / "background.png"
-    if p.exists():
-        try: return Image.open(p).convert("RGBA")
-        except: pass
-    return _fallback_bg()
+def load_background() -> Image.Image:
+    return Image.open(ASSETS_DIR / "background.png").convert("RGBA")
 
-# ═══ PRESETS ═══
-PRESETS = {
-    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=34,side_padding=34,product_scale=1.0,center_mode="centroid",font_size=30),
-    "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=22.2),
-    "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=22.2),
-    "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=22.2),
-    "👕 Thời trang":      dict(top_margin=155,bottom_margin=45,side_padding=35,product_scale=1.05,center_mode="bbox",font_size=22.2),
-    "📱 ĐT dọc":          dict(top_margin=160,bottom_margin=50,side_padding=70,product_scale=1.0,center_mode="bbox",font_size=22.2),
-}
 
-def _init():
-    st.session_state.setdefault("preset_name","🎯 Chuẩn (PS mẫu)")
-    st.session_state.setdefault("overrides",{})
-    for k,v in PRESETS[st.session_state["preset_name"]].items():
-        st.session_state.setdefault(f"cfg_{k}",v)
-_init()
+def read_excel_safe(file) -> pd.DataFrame:
+    """Đọc Excel/CSV với các tên cột linh hoạt (id, text1, text2)."""
+    name = getattr(file, "name", "").lower()
+    if name.endswith(".csv"):
+        df = pd.read_csv(file, dtype=str, keep_default_na=False)
+    else:
+        df = pd.read_excel(file, dtype=str, keep_default_na=False)
 
-def _apply_preset(n):
-    for k,v in PRESETS.get(n,{}).items(): st.session_state[f"cfg_{k}"]=v
-    st.session_state["preset_name"]=n
+    # Chuẩn hoá tên cột: lowercase, bỏ dấu cách
+    df.columns = [str(c).strip().lower().replace(" ", "") for c in df.columns]
 
-# ═══ HELPERS ═══
-def _compress(data, max_dim=MAX_UPLOAD_DIM):
-    try:
-        img=Image.open(io.BytesIO(data)); img.load()
-    except: return data
-    w,h=img.size
-    if max(w,h)<=max_dim: return data
-    s=max_dim/max(w,h); img=img.resize((int(w*s),int(h*s)),Image.LANCZOS)
-    buf=io.BytesIO()
-    if img.mode in ("RGBA","LA"): img.save(buf,"PNG",optimize=True)
-    else: img.convert("RGB").save(buf,"JPEG",quality=95,optimize=True)
-    return buf.getvalue()
-
-def _read_excel(file):
-    n=getattr(file,"name","").lower()
-    df=(pd.read_csv(file,dtype=str,keep_default_na=False) if n.endswith(".csv")
-        else pd.read_excel(file,dtype=str,keep_default_na=False))
-    df.columns=[str(c).strip().lower().replace(" ","") for c in df.columns]
-    m={}
+    # Map linh hoạt
+    col_map: Dict[str, str] = {}
     for c in df.columns:
-        if c in ("id","sku","masp","ma","productid","code"): m[c]="id"
-        elif c in ("text1","tt1","dong1","line1","title1"): m[c]="text1"
-        elif c in ("text2","tt2","dong2","line2","title2"): m[c]="text2"
-    df=df.rename(columns=m)
-    for col in ("id","text1","text2"):
-        if col not in df.columns: df[col]=""
-    df=df[["id","text1","text2"]].copy()
-    for col in df.columns: df[col]=df[col].astype(str).str.strip()
-    return df[df["id"]!=""].reset_index(drop=True)
+        if c in ("id", "sku", "masp", "ma", "productid", "code"):
+            col_map[c] = "id"
+        elif c in ("text1", "tt1", "dong1", "line1", "title1"):
+            col_map[c] = "text1"
+        elif c in ("text2", "tt2", "dong2", "line2", "title2"):
+            col_map[c] = "text2"
+    df = df.rename(columns=col_map)
 
-def _match(df,imgs):
-    by={}
-    for f in imgs:
-        try: by[Path(f.name).stem.strip().lower()]=(_compress(f.getvalue()),f.name)
-        except: continue
-    mapping,names,ok,miss={},{},{},[]
-    for pid in df["id"].tolist():
-        k=str(pid).strip().lower(); hit=by.get(k)
-        if not hit:
-            for s,d in by.items():
-                if k in s or s in k: hit=d; break
-        if hit: mapping[pid]=hit[0];names[pid]=hit[1];ok[pid]=True
-        else: miss.append(pid)
-    return mapping,names,list(ok.keys()),miss
-
-def _eff_df():
-    df=st.session_state.get("df")
-    if df is None: return pd.DataFrame()
-    df=df.copy(); ov=st.session_state.get("overrides",{})
-    for pid,o in ov.items():
-        mask=df["id"]==pid
-        if o.get("t1") is not None: df.loc[mask,"text1"]=o["t1"]
-        if o.get("t2") is not None: df.loc[mask,"text2"]=o["t2"]
+    for col in ("id", "text1", "text2"):
+        if col not in df.columns:
+            df[col] = ""
+    df = df[["id", "text1", "text2"]].copy()
+    df["id"] = df["id"].astype(str).str.strip()
+    df["text1"] = df["text1"].astype(str).str.strip()
+    df["text2"] = df["text2"].astype(str).str.strip()
+    df = df[df["id"] != ""].reset_index(drop=True)
     return df
 
-def _cfg(pid=None):
-    g={k:st.session_state.get(f"cfg_{k}",v) for k,v in [
-        ("top_margin",155),("bottom_margin",55),("side_padding",40),
-        ("product_scale",1.0),("center_mode","centroid"),("font_size",22.2)]}
-    ov=st.session_state.get("overrides",{}).get(pid or "",{})
-    for k in g:
-        if ov.get(k) is not None: g[k]=ov[k]
-    return ThumbnailConfig(
-        top_margin=g["top_margin"],bottom_margin=g["bottom_margin"],side_padding=g["side_padding"],
-        font_size=g["font_size"],font_weight=FONT_WEIGHT,text_color=(0,0,0),text_padding=TEXT_PADDING,
-        remove_bg_mode="white" if st.session_state.get("remove_bg") else "none",
-        white_tolerance=WHITE_TOL,show_background=True,
-        center_mode=g["center_mode"],product_scale=g["product_scale"],
-        pill_left=PILL_LEFT,pill_height=PILL_HEIGHT,pill1_top=PILL1_TOP,pill2_gap=PILL2_GAP,
-        max_pill_right=MAX_PILL_RIGHT,
-        shadow_offset_x=SHADOW_X,shadow_offset_y=SHADOW_Y,shadow_blur=SHADOW_BLUR,shadow_opacity=SHADOW_OP,
-        font_family=st.session_state.get("cfg_font_family",DEFAULT_FONT_FAMILY),
-    )
 
-def _validate():
-    issues=[]; df=_eff_df(); mapping=st.session_state.get("mapping",{})
-    if df.empty: return issues
-    dupes=df[df["id"].duplicated(keep=False)]["id"].unique().tolist()
-    if dupes: issues.append({"severity":"error","type":"Trùng ID","pid":"","message":f"{len(dupes)} ID trùng: {', '.join(dupes[:5])}"})
-    for _,row in df.iterrows():
-        pid=row["id"]; t1,t2=row["text1"],row["text2"]
-        if pid not in mapping: issues.append({"severity":"error","type":"Thiếu ảnh","pid":pid,"message":"Chưa có ảnh"}); continue
-        if len((t1+" "+t2).strip())>50: issues.append({"severity":"warn","type":"Text dài","pid":pid,"message":f"{len(t1)+len(t2)} ký tự"})
-        if not t1 and not t2: issues.append({"severity":"warn","type":"Trống text","pid":pid,"message":"Không có text"})
-        try:
-            img=Image.open(io.BytesIO(mapping[pid])); img.verify()
-            img=Image.open(io.BytesIO(mapping[pid])); w,h=img.size
-            if min(w,h)<MIN_SRC_DIM: issues.append({"severity":"warn","type":"Ảnh nhỏ","pid":pid,"message":f"{w}×{h}"})
-        except: issues.append({"severity":"error","type":"Ảnh hỏng","pid":pid,"message":"Không mở được"})
-    return issues
+def match_images_by_id(
+    df: pd.DataFrame,
+    uploaded_images: List,
+) -> Tuple[Dict[str, bytes], Dict[str, str], List[str], List[str]]:
+    """
+    Khớp ảnh với id trong excel.
+    Logic: tên file chứa id (không phân biệt hoa thường, bỏ extension).
+    """
+    img_by_stem: Dict[str, Tuple[bytes, str]] = {}
+    for f in uploaded_images:
+        stem = Path(f.name).stem.strip().lower()
+        img_by_stem[stem] = (f.getvalue(), f.name)
 
-def _export_cfg():
-    return {"version":APP_VERSION,"exported":time.strftime("%Y-%m-%d %H:%M:%S"),
-            "preset":st.session_state.get("preset_name"),
-            "global":{k[4:]:st.session_state[k] for k in st.session_state if k.startswith("cfg_")},
-            "overrides":st.session_state.get("overrides",{})}
+    mapping: Dict[str, bytes] = {}
+    orig_names: Dict[str, str] = {}
+    matched, unmatched = [], []
 
-def _empty(icon,msg):
-    with st.container(border=True):
-        _,c,_=st.columns([1,2,1])
-        with c: st.markdown(f"<div style='text-align:center;padding:40px 0;'><div style='font-size:48px;'>{icon}</div><div style='color:#94a3b8;font-size:14px;margin-top:8px;'>{msg}</div></div>",unsafe_allow_html=True)
-
-# ═══ SIDEBAR ═══
-with st.sidebar:
-    st.markdown("### 🖼️ Thumbnail Builder")
-    st.caption(f"v{APP_VERSION} · Dark · Dynamic Pill")
-    st.divider()
-
-    st.markdown("**🎨 Preset**")
-    sel=st.selectbox("Preset",list(PRESETS.keys()),
-        index=list(PRESETS.keys()).index(st.session_state["preset_name"]),label_visibility="collapsed")
-    if sel!=st.session_state["preset_name"]: _apply_preset(sel); st.rerun()
-
-    st.divider()
-    st.markdown("**📐 Layout**")
-    c1,c2=st.columns(2)
-    with c1: st.number_input("Mép trên",0,300,key="cfg_top_margin",step=5)
-    with c2: st.number_input("Mép dưới",0,250,key="cfg_bottom_margin",step=5)
-    c1,c2=st.columns(2)
-    with c1: st.number_input("Padding bên",0,100,key="cfg_side_padding",step=5)
-    with c2: st.number_input("Zoom SP",0.5,1.5,key="cfg_product_scale",step=0.05,format="%.2f")
-    st.radio("Căn giữa",["centroid","bbox"],key="cfg_center_mode",horizontal=True,
-             format_func=lambda x:"Trọng tâm" if x=="centroid" else "Khung")
-
-    st.divider()
-    st.markdown("**✒️ Font**")
-    try:
-        af=list_available_fonts(); fl=list(af.keys())
-        di=fl.index("Montserrat-Bold") if "Montserrat-Bold" in fl else 0
-        st.selectbox("Loại chữ",fl,index=di,key="cfg_font_family")
-    except: st.session_state["cfg_font_family"]=DEFAULT_FONT_FAMILY
-    st.number_input("Kích thước",9.0,40.0,key="cfg_font_size",step=0.5,format="%.1f")
-
-    st.divider()
-    st.markdown("**📤 Xuất**")
-    st.toggle("Tách nền trắng",key="remove_bg")
-    out_fmt=st.selectbox("Format",["PNG","JPG","WEBP"])
-    jpg_q=st.slider("Quality",70,100,92) if out_fmt in ("JPG","WEBP") else 92
-
-    st.divider()
-    with st.expander("💾 Lưu/Tải config"):
-        st.download_button("📥 Tải config",json.dumps(_export_cfg(),indent=2,ensure_ascii=False),
-                          f"config_{time.strftime('%Y%m%d')}.json","application/json",use_container_width=True)
-        up=st.file_uploader("📤 Nhập",type=["json"],label_visibility="collapsed",key="cfg_up")
-        if up and st.button("Áp dụng",use_container_width=True):
-            try:
-                d=json.loads(up.getvalue().decode())
-                if d.get("preset") in PRESETS: st.session_state["preset_name"]=d["preset"]
-                for k,v in (d.get("global") or {}).items(): st.session_state[f"cfg_{k}"]=v
-                if "overrides" in d: st.session_state["overrides"]=d["overrides"]
-                st.success("OK!"); st.rerun()
-            except Exception as e: st.error(str(e))
-    st.divider()
-    logout_btn()
-
-# ═══ HERO ═══
-c1,c2,c3,c4=st.columns([3,1,1,1])
-with c1:
-    st.markdown("### 🖼️ Thumbnail Builder Pro")
-    st.caption("Dynamic pill · Montserrat Bold (PS 20.5pt) · Dark theme")
-df=st.session_state.get("df"); mapping=st.session_state.get("mapping",{})
-ov_count=sum(1 for p in mapping if any(k for k in st.session_state.get("overrides",{}).get(p,{}) if k not in ("t1","t2")))
-with c2: st.metric("📋 Excel",len(df) if df is not None else 0)
-with c3: st.metric("✅ Khớp",len(mapping))
-with c4: st.metric("🎯 Custom",ov_count)
-
-# ═══ TABS ═══
-tab1,tab2,tab3,tab4,tab5=st.tabs(["📥 Upload","🔬 Test","👁️ Preview","✏️ Chỉnh riêng","📦 Xuất"])
-
-with tab1:
-    st.markdown("### 📄 File Excel / CSV")
-    c1,c2=st.columns([4,1])
-    with c1:
-        ef=st.file_uploader("Excel/CSV",type=["xlsx","xls","csv"],label_visibility="collapsed")
-    with c2:
-        s=pd.DataFrame({"id":["SP001","SP002"],"text1":["SỨC CHỨA 24 CHAI","BLUETOOTH 5.4"],"text2":["GIÁ KỆ GỖ SỒI CAO CẤP","CỔNG SẠC TYPE-C"]})
-        b=io.BytesIO()
-        with pd.ExcelWriter(b,engine="openpyxl") as w: s.to_excel(w,index=False)
-        st.download_button("📥 Mẫu",b.getvalue(),"mau.xlsx",use_container_width=True)
-    if ef:
-        try: df_new=_read_excel(ef); st.session_state["df"]=df_new; st.success(f"✅ {len(df_new)} SP")
-        except Exception as e: st.error(str(e))
-    df=st.session_state.get("df")
-    if df is not None:
-        with st.expander("📝 Sửa text nhanh"):
-            ed=st.data_editor(df,use_container_width=True,hide_index=True,num_rows="fixed",key="be",disabled=["id"],height=min(300,45*len(df)+38))
-            if not ed.equals(df):
-                if st.button("💾 Lưu text",use_container_width=True): st.session_state["df"]=ed.reset_index(drop=True); st.rerun()
-    st.divider()
-    st.markdown("### 🖼️ Ảnh sản phẩm")
-    st.caption("Tên file chứa id. Ảnh > 1600px tự nén.")
-    imgs=st.file_uploader("Ảnh",type=["png","jpg","jpeg","webp"],accept_multiple_files=True,label_visibility="collapsed")
-    if imgs:
-        ok=[f for f in imgs if f.size<=MAX_UPLOAD_MB*1024*1024]; st.session_state["img_files"]=ok
-    imf=st.session_state.get("img_files")
-    if df is not None and imf:
-        mapping,orig_names,matched,unmatched=_match(df,imf)
-        st.session_state["mapping"]=mapping; st.session_state["orig_names"]=orig_names
-        c1,c2,c3,c4=st.columns(4)
-        c1.metric("📋",len(df)); c2.metric("✅",len(matched)); c3.metric("❌",len(unmatched)); c4.metric("🖼️",len(imf))
-        if unmatched:
-            with st.expander(f"⚠️ {len(unmatched)} thiếu ảnh"): st.write(unmatched)
-    if df is not None and st.session_state.get("mapping"):
-        st.divider()
-        st.markdown("### 🔍 Kiểm tra batch")
-        if st.button("🔍 Quét",type="primary"):
-            with st.spinner("Đang quét..."):
-                iss=_validate()
-            if not iss: st.success("🎉 OK!")
-            else:
-                errs=[i for i in iss if i["severity"]=="error"]; warns=[i for i in iss if i["severity"]=="warn"]
-                c1,c2=st.columns(2); c1.metric("❌ Lỗi",len(errs)); c2.metric("⚠️ Cảnh báo",len(warns))
-                st.dataframe(pd.DataFrame(iss),use_container_width=True)
-
-with tab2:
-    st.markdown("### 🔬 Test nhanh")
-    cl,cr=st.columns([1,1],gap="large")
-    with cl:
-        si=st.file_uploader("Ảnh",type=["png","jpg","jpeg","webp"],key="su")
-        sid=st.text_input("ID","DEMO001"); st1=st.text_input("Text 1","SỨC CHỨA 24 CHAI"); st2=st.text_input("Text 2","GIÁ KỆ GỖ SỒI CAO CẤP")
-    with cr:
-        if si:
-            try:
-                prod=Image.open(io.BytesIO(si.getvalue())); bg=_bg(); c=_cfg()
-                thumb,info=build_thumbnail(prod,st1,st2,bg,c)
-                st.image(thumb,use_container_width=True)
-                st.caption(f"600×600 · Font {info['font_sizes_used']} · Gốc {prod.size[0]}×{prod.size[1]}")
-                fl=out_fmt.lower(); st.download_button(f"⬇️ {sid}.{fl}",pil_to_bytes(thumb,fl,jpg_q),f"{sanitize_filename(sid)}.{fl}",use_container_width=True)
-            except Exception as e: st.error(str(e))
-        else: _empty("🖼️","Upload ảnh bên trái")
-
-with tab3:
-    df=_eff_df(); mapping=st.session_state.get("mapping",{})
-    if df.empty or not mapping: _empty("📋","Hoàn tất Upload")
-    else:
-        c1,c2,c3=st.columns([3,1,1])
-        with c1: search=st.text_input("🔍",placeholder="ID hoặc text...",label_visibility="collapsed")
-        with c2: cn=st.selectbox("Cột",[2,3,4,6],index=2,label_visibility="collapsed")
-        with c3: mn=st.selectbox("Số",[12,24,48,100],index=1,label_visibility="collapsed")
-        dfv=df[df["id"].isin(mapping.keys())].copy()
-        if search:
-            s=search.lower()
-            dfv=dfv[dfv["id"].str.lower().str.contains(s,na=False)|dfv["text1"].str.lower().str.contains(s,na=False)|dfv["text2"].str.lower().str.contains(s,na=False)]
-        if len(dfv)==0: st.warning("Không tìm thấy.")
+    for pid in df["id"].tolist():
+        key = str(pid).strip().lower()
+        hit = None
+        if key in img_by_stem:
+            hit = img_by_stem[key]
         else:
-            ova=st.session_state.get("overrides",{}); bg=_bg(); rows=dfv.head(mn).to_dict("records")
-            prog=st.progress(0.0); cols=st.columns(cn)
-            for i,row in enumerate(rows):
-                prog.progress((i+1)/len(rows)); pid=row["id"]
-                try:
-                    prod=Image.open(io.BytesIO(mapping[pid])); c=_cfg(pid)
-                    thumb,info=build_thumbnail(prod,row["text1"],row["text2"],bg,c)
-                    with cols[i%cn]:
-                        with st.container(border=True):
-                            st.image(thumb,use_container_width=True)
-                            hc=any(k for k in ova.get(pid,{}) if k not in ("t1","t2"))
-                            bd=(" 🎯" if hc else "")+(" ⚡" if info["any_shrunk"] else "")
-                            st.markdown(f"**{pid}**{bd}"); m=row["text1"]
-                            if row["text2"]: m+=f" · {row['text2']}"
-                            st.caption(m[:60])
-                except Exception as e:
-                    with cols[i%cn]: st.error(f"{pid}: {str(e)[:40]}")
-            prog.empty()
+            for stem, data_name in img_by_stem.items():
+                if key in stem or stem in key:
+                    hit = data_name
+                    break
+        if hit is not None:
+            mapping[pid] = hit[0]
+            orig_names[pid] = hit[1]
+            matched.append(pid)
+        else:
+            unmatched.append(pid)
 
-with tab4:
-    df=_eff_df(); mapping=st.session_state.get("mapping",{})
-    if df.empty or not mapping: _empty("✏️","Hoàn tất Upload")
-    else:
-        st.markdown("### ✏️ Chỉnh riêng từng SP")
-        vids=[p for p in df["id"].tolist() if p in mapping]
-        c1,c2,c3=st.columns([3,1,1])
-        ova=st.session_state.get("overrides",{})
-        with c1: pid=st.selectbox("SP",vids,format_func=lambda x:f"🎯 {x}" if any(k for k in ova.get(x,{}) if k not in ("t1","t2")) else x)
-        idx=vids.index(pid) if pid in vids else 0
+    return mapping, orig_names, matched, unmatched
+
+
+def build_config_from_sidebar() -> Tuple[ThumbnailConfig, dict]:
+    """Render sidebar controls và trả về ThumbnailConfig + metadata."""
+    with st.sidebar:
+        st.markdown("### ⚙️ Cấu hình thumbnail")
+
+        with st.expander("📐 Layout sản phẩm", expanded=True):
+            st.caption("💡 Preset mặc định: sản phẩm cân giữa, không bị pill che, không sát viền.")
+
+            top_m = st.slider(
+                "Mép trên → SP (px)",
+                0, 300, 155,
+                help="Khoảng cách từ mép trên thumbnail đến đỉnh sản phẩm. "
+                     "Mặc định 155: sản phẩm nằm dưới pill, không bị che.",
+            )
+            bot_m = st.slider(
+                "Mép dưới → SP (px)",
+                0, 250, 55,
+                help="Khoảng cách từ mép dưới thumbnail đến đáy sản phẩm. Mặc định 55.",
+            )
+            side_p = st.slider(
+                "Padding 2 bên (px)", 0, 100, 40,
+                help="Cách đều 2 bên trái/phải. Mặc định 40 để sp không sát viền.",
+            )
+            center_mode_label = st.radio(
+                "Chế độ căn giữa sản phẩm",
+                ["Theo trọng tâm (centroid) — khuyên dùng", "Theo khung bbox"],
+                index=0,
+                help="Centroid cân cho sp bất đối xứng (chảo, ấm có cán...). "
+                     "Bbox cân cho sp đối xứng (chai, hộp vuông...).",
+            )
+            center_mode = "centroid" if center_mode_label.startswith("Theo trọng tâm") else "bbox"
+
+            prod_scale = st.slider(
+                "Zoom sản phẩm", 0.5, 1.3, 1.0, step=0.05,
+                help="Phóng to/thu nhỏ sản phẩm trong khung. 1.0 = tự fit vừa khung.",
+            )
+
+        with st.expander("✒️ Text & Font", expanded=True):
+            font_size = st.slider(
+                "Font size (Montserrat)",
+                9.0, 30.0, float(DEFAULT_FONT_SIZE), step=0.1,
+                help="Text dài sẽ tự shrink. Text ngắn giữ nguyên size này.",
+            )
+            text_pad = st.slider(
+                "Text thụt vào pill (px)", 10, 50, 18,
+                help="Khoảng cách từ mép pill đến chữ. Mặc định 18 (đo từ ảnh mẫu).",
+            )
+            weight_label = st.select_slider(
+                "Độ đậm",
+                options=["Regular (400)", "Medium (500)", "SemiBold (600)",
+                         "Bold (700)", "ExtraBold (800)", "Black (900)"],
+                value="ExtraBold (800)",
+            )
+            weight_map = {"Regular (400)": 400, "Medium (500)": 500, "SemiBold (600)": 600,
+                          "Bold (700)": 700, "ExtraBold (800)": 800, "Black (900)": 900}
+            font_weight = weight_map[weight_label]
+
+            color_hex = st.color_picker("Màu chữ", "#000000")
+            text_color = tuple(int(color_hex[i:i + 2], 16) for i in (1, 3, 5))
+
+        with st.expander("🎨 Pill (khung text)", expanded=False):
+            st.caption("⚡ Giá trị mặc định đã đo chính xác từ ảnh mẫu chuẩn.")
+            pill_left = st.slider("Pill left (px)", 0, 100, 15,
+                                  help="Mặc định 15 — khớp guide V-line.")
+            pill_height = st.slider("Pill height (px)", 30, 80, 52,
+                                    help="Mặc định 52 — FIX CỨNG chiều cao. Chiều rộng tự co theo text.")
+            pill1_top = st.slider("Pill 1 top (px)", 0, 100, 5,
+                                  help="Mặc định 5 — khớp guide H-line trên cùng.")
+            pill2_gap = st.slider("Khoảng cách giữa 2 pill (px)", 0, 40, 13,
+                                  help="Mặc định 13 — khớp guide.")
+
+            st.markdown("**Shadow**")
+            sh_x = st.slider("Shadow X offset", -10, 10, 3)
+            sh_y = st.slider("Shadow Y offset", -10, 15, 5)
+            sh_blur = st.slider("Shadow blur", 0, 20, 5)
+            sh_op = st.slider("Shadow opacity", 0, 255, 112)
+
+        with st.expander("🪄 Tách nền trắng (tuỳ chọn)", expanded=False):
+            bg_mode_label = st.radio(
+                "Chế độ tách nền",
+                ["Không tách", "Tách nền trắng (khuyến nghị)"],
+                index=0,
+                help="Tách nền trắng dùng flood-fill — không cần AI, giữ chi tiết tốt. "
+                     "Phù hợp với ảnh sản phẩm trên nền trắng sạch.",
+            )
+            bg_mode = {"Không tách": "none",
+                       "Tách nền trắng (khuyến nghị)": "white"}[bg_mode_label]
+
+            white_tol = st.slider(
+                "Độ nhạy với nền trắng", 5, 40, 18, disabled=(bg_mode != "white"),
+                help="Càng cao càng 'ăn' cả xám nhạt. Với nền trắng tinh, để 15-20.",
+            )
+
+            show_bg = st.checkbox(
+                "Dùng background mẫu (ảnh Nền.png)", value=True,
+                help="Bỏ tick để nền trắng tinh thay vì background có shadow.",
+            )
+
+        st.divider()
+
+        st.markdown("### 📤 Xuất file")
+        out_format = st.radio("Định dạng", ["PNG", "JPG"], horizontal=True)
+        jpg_quality = st.slider("Chất lượng JPG", 70, 100, 92, disabled=(out_format != "JPG"))
+
+        st.divider()
+        logout_button()
+
+    cfg = ThumbnailConfig(
+        top_margin=top_m,
+        bottom_margin=bot_m,
+        side_padding=side_p,
+        font_size=font_size,
+        font_weight=font_weight,
+        text_color=text_color,
+        text_padding=text_pad,
+        remove_bg_mode=bg_mode,
+        white_tolerance=white_tol,
+        show_background=show_bg,
+        center_mode=center_mode,
+        product_scale=prod_scale,
+        pill_left=pill_left,
+        pill_right=300,       # không dùng trực tiếp — width tự tính
+        pill_height=pill_height,
+        pill1_top=pill1_top,
+        pill2_gap=pill2_gap,
+        shadow_offset_x=sh_x,
+        shadow_offset_y=sh_y,
+        shadow_blur=sh_blur,
+        shadow_opacity=sh_op,
+    )
+    meta = {"format": out_format, "jpg_quality": jpg_quality}
+    return cfg, meta
+
+
+# ============ HEADER ============
+st.markdown(
+    """
+    <div style='display:flex; align-items:center; justify-content:space-between;
+                padding: 8px 16px; border-radius: 14px;
+                background: linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%);
+                color:white; margin-bottom: 18px;'>
+        <div>
+            <div style='font-size:26px; font-weight:800; letter-spacing:-0.5px;'>
+                🖼️ Thumbnail Builder Pro
+            </div>
+            <div style='opacity:0.9; font-size:14px;'>
+                Tạo thumbnail sản phẩm 600×600 hàng loạt · Montserrat · Smart-fit · Cap-height centering
+            </div>
+        </div>
+        <div style='text-align:right; font-size:12px; opacity:0.85;'>
+            <div>Rule: top 155px · bot 55px · side 40px</div>
+            <div>Pill: left 15 · height 52 · gap 13 · pad 18</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ============ SIDEBAR CONFIG ============
+cfg, out_meta = build_config_from_sidebar()
+
+
+# ============ UPLOAD ============
+tab_upload, tab_single, tab_preview, tab_export = st.tabs(
+    ["📥 1. Upload dữ liệu", "🧪 2. Test đơn lẻ", "👁️ 3. Preview hàng loạt", "📦 4. Xuất ZIP"]
+)
+
+with tab_upload:
+    st.markdown("#### 📄 Bước 1 — File Excel/CSV (bắt buộc)")
+    col1, col2 = st.columns([3, 2])
+    with col1:
+        excel_file = st.file_uploader(
+            "File Excel (.xlsx, .xls) hoặc CSV",
+            type=["xlsx", "xls", "csv"],
+            help="Cột cần có: **id** (mã SP), **text1**, **text2**. "
+                 "Cột khác sẽ bị bỏ qua. Hỗ trợ tên cột tiếng Việt: masp, tt1, tt2...",
+        )
+    with col2:
+        st.markdown(
+            """
+            **📌 Quy ước cột**
+            - `id` / `sku` / `masp` → mã SP
+            - `text1` / `tt1` / `dong1` → dòng 1
+            - `text2` / `tt2` / `dong2` → dòng 2
+            """
+        )
+        # Nút tạo file mẫu
+        sample = pd.DataFrame({
+            "id": ["SP001", "SP002", "SP003"],
+            "text1": ["BLUETOOTH 5.4", "CHỐNG NƯỚC IPX7", "PIN 30H"],
+            "text2": ["CỔNG SẠC TYPE-C", "", "SẠC NHANH"],
+        })
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as w:
+            sample.to_excel(w, index=False, sheet_name="Products")
+        st.download_button(
+            "📥 Tải Excel mẫu",
+            buf.getvalue(),
+            "thumbnail_sample.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+    if excel_file:
+        try:
+            df = read_excel_safe(excel_file)
+            st.session_state["df"] = df
+            st.success(f"✅ Đọc được **{len(df)}** sản phẩm từ file.")
+            with st.expander("📋 Xem trước dữ liệu", expanded=False):
+                st.dataframe(df, use_container_width=True, height=min(300, 38 * len(df) + 38))
+        except Exception as e:
+            st.error(f"❌ Lỗi đọc file: {e}")
+
+    st.markdown("---")
+    st.markdown("#### 🖼️ Bước 2 — Ảnh sản phẩm (bắt buộc)")
+    st.caption(
+        "Upload tất cả ảnh sản phẩm. Tên file cần chứa **id** của sản phẩm (VD: `SP001.png`, `SP001_main.jpg`). "
+        "App sẽ tự khớp theo tên. Ảnh sẽ được auto crop/resize về 600×600 mà không làm méo."
+    )
+    img_files = st.file_uploader(
+        "Ảnh (PNG, JPG, WEBP) - chọn nhiều cùng lúc",
+        type=["png", "jpg", "jpeg", "webp"],
+        accept_multiple_files=True,
+    )
+    if img_files:
+        st.session_state["img_files"] = img_files
+        st.success(f"✅ Đã nhận **{len(img_files)}** ảnh.")
+
+    # Matching summary
+    df = st.session_state.get("df")
+    imgs = st.session_state.get("img_files")
+    if df is not None and imgs:
+        mapping, orig_names, matched, unmatched = match_images_by_id(df, imgs)
+        st.session_state["mapping"] = mapping
+        st.session_state["orig_names"] = orig_names
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f"<div class='stat-card'><h3>{len(df)}</h3><p>Dòng trong Excel</p></div>",
+                        unsafe_allow_html=True)
         with c2:
-            if st.button("◀",use_container_width=True,disabled=idx==0): st.session_state["_np"]=vids[idx-1]; st.rerun()
+            st.markdown(f"<div class='stat-card'><h3>{len(matched)}</h3><p>Khớp ảnh</p></div>",
+                        unsafe_allow_html=True)
         with c3:
-            if st.button("▶",use_container_width=True,disabled=idx>=len(vids)-1): st.session_state["_np"]=vids[idx+1]; st.rerun()
-        if "_np" in st.session_state: pid=st.session_state.pop("_np")
-        row=df[df["id"]==pid].iloc[0]; ov=ova.get(pid,{})
-        cl,cr=st.columns([1.1,1],gap="large")
-        with cl:
-            try:
-                prod=Image.open(io.BytesIO(mapping[pid])); c=_cfg(pid)
-                thumb,info=build_thumbnail(prod,row["text1"],row["text2"],_bg(),c)
-                st.image(thumb,use_container_width=True)
-                st.caption(f"600×600 · Font {info['font_sizes_used']} · Gốc {prod.size[0]}×{prod.size[1]}")
-            except Exception as e: st.error(str(e))
-        with cr:
-            with st.container(border=True):
-                st.markdown(f"### ⚙️ `{pid}`")
-                use_ov=st.toggle("Cấu hình riêng",value=bool(ov) and any(k for k in ov if k not in ("t1","t2")),key=f"uo_{pid}")
-                if use_ov:
-                    ct=ov.get("top_margin",st.session_state.get("cfg_top_margin",155))
-                    cb=ov.get("bottom_margin",st.session_state.get("cfg_bottom_margin",55))
-                    cs=ov.get("side_padding",st.session_state.get("cfg_side_padding",40))
-                    csc=ov.get("product_scale",st.session_state.get("cfg_product_scale",1.0))
-                    cc=ov.get("center_mode",st.session_state.get("cfg_center_mode","centroid"))
-                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",22.2))
-                    c1,c2=st.columns(2)
-                    with c1: nt=st.number_input("Trên",0,300,int(ct),5,key=f"ot_{pid}"); ns=st.number_input("Side",0,100,int(cs),5,key=f"os_{pid}"); nsc=st.number_input("Zoom",0.5,1.5,float(csc),0.05,format="%.2f",key=f"oz_{pid}")
-                    with c2: nb=st.number_input("Dưới",0,250,int(cb),5,key=f"ob_{pid}"); nf=st.number_input("Font",9.0,40.0,float(cf),0.5,format="%.1f",key=f"of_{pid}"); nc=st.radio("Căn",["centroid","bbox"],index=0 if cc=="centroid" else 1,horizontal=True,key=f"oc_{pid}",format_func=lambda x:"TT" if x=="centroid" else "BBox")
-                    c1,c2=st.columns(2)
-                    with c1:
-                        if st.button("💾 Lưu",type="primary",use_container_width=True):
-                            st.session_state.setdefault("overrides",{}).setdefault(pid,{}).update({"top_margin":nt,"bottom_margin":nb,"side_padding":ns,"product_scale":nsc,"center_mode":nc,"font_size":nf})
-                            st.success("OK!"); st.rerun()
-                    with c2:
-                        if st.button("📋 Copy→",use_container_width=True): st.session_state["_cf"]=pid
-                else:
-                    if ov and any(k for k in ov if k not in ("t1","t2")):
-                        if st.button("🗑️ Xoá config riêng",use_container_width=True):
-                            nv={k:v for k,v in ov.items() if k in ("t1","t2")}
-                            if nv: st.session_state["overrides"][pid]=nv
-                            else: st.session_state["overrides"].pop(pid,None)
-                            st.rerun()
-                    else: st.info("Bật toggle để tuỳ chỉnh riêng.")
-                if st.session_state.get("_cf")==pid:
-                    st.divider(); targets=st.multiselect("Chọn SP đích",[x for x in vids if x!=pid])
-                    c1,c2=st.columns(2)
-                    with c1:
-                        if st.button("✅ Áp dụng",type="primary",use_container_width=True,disabled=not targets):
-                            sc={k:v for k,v in ov.items() if k not in ("t1","t2")}
-                            for t in targets: st.session_state.setdefault("overrides",{}).setdefault(t,{}).update(sc)
-                            st.session_state.pop("_cf",None); st.success(f"Áp {len(targets)} SP"); st.rerun()
-                    with c2:
-                        if st.button("❌ Huỷ",use_container_width=True): st.session_state.pop("_cf",None); st.rerun()
-                st.divider()
-                nt1=st.text_input("Text 1",row["text1"],key=f"t1_{pid}"); nt2=st.text_input("Text 2",row["text2"],key=f"t2_{pid}")
-                if nt1!=row["text1"] or nt2!=row["text2"]:
-                    if st.button("💾 Lưu text",use_container_width=True,key=f"st_{pid}"):
-                        o=st.session_state.setdefault("overrides",{}).setdefault(pid,{}); o["t1"]=nt1; o["t2"]=nt2
-                        bdf=st.session_state["df"]; bdf.loc[bdf["id"]==pid,"text1"]=nt1; bdf.loc[bdf["id"]==pid,"text2"]=nt2
-                        st.success("OK!"); st.rerun()
+            st.markdown(f"<div class='stat-card'><h3>{len(unmatched)}</h3><p>Thiếu ảnh</p></div>",
+                        unsafe_allow_html=True)
+        if unmatched:
+            with st.expander(f"⚠️ {len(unmatched)} sản phẩm chưa có ảnh", expanded=False):
+                st.write(unmatched)
 
-with tab5:
-    df=_eff_df(); mapping=st.session_state.get("mapping",{})
-    if df.empty or not mapping: _empty("📦","Hoàn tất Upload")
+
+# ============ TEST ĐƠN LẺ ============
+with tab_single:
+    st.markdown("#### 🧪 Thử nghiệm với 1 sản phẩm")
+    st.caption("Upload 1 ảnh + nhập text để xem preview tức thì. Không cần Excel.")
+    cA, cB = st.columns([1, 1])
+    with cA:
+        single_img = st.file_uploader("Ảnh sản phẩm", type=["png", "jpg", "jpeg", "webp"], key="single")
+        s_id = st.text_input("ID sản phẩm", "DEMO001")
+        s_t1 = st.text_input("Text 1", "BLUETOOTH 5.4")
+        s_t2 = st.text_input("Text 2", "CỔNG SẠC TYPE-C")
+    with cB:
+        if single_img is not None:
+            try:
+                prod = Image.open(single_img)
+                bg = load_background()
+                thumb, info = build_thumbnail(prod, s_t1, s_t2, bg, cfg)
+                st.image(thumb, caption=f"Preview — {s_id}", use_container_width=True)
+                meta_line = f"📐 600×600 · Font size thực: {info['font_sizes_used']}"
+                if info["any_shrunk"]:
+                    meta_line += " ⚡ (đã shrink)"
+                st.caption(meta_line)
+
+                fmt = out_meta["format"].lower()
+                data = pil_to_bytes(thumb, fmt, out_meta["jpg_quality"])
+                fname = f"{sanitize_filename(s_id)}.{fmt}"
+                st.download_button(
+                    "⬇️ Tải thumbnail này",
+                    data, fname,
+                    "image/png" if fmt == "png" else "image/jpeg",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.error(f"❌ Lỗi: {e}")
+        else:
+            st.info("👈 Upload 1 ảnh sản phẩm để xem preview")
+
+
+# ============ PREVIEW HÀNG LOẠT ============
+with tab_preview:
+    df = st.session_state.get("df")
+    mapping = st.session_state.get("mapping", {})
+    if df is None or not mapping:
+        st.info("👈 Hoàn tất bước 1 (upload Excel + ảnh) để xem preview hàng loạt.")
     else:
-        nt=len(mapping); no=sum(1 for p in mapping if any(k for k in st.session_state.get("overrides",{}).get(p,{}) if k not in ("t1","t2")))
-        c1,c2,c3,c4=st.columns(4)
-        c1.metric("🖼️",nt); c2.metric("📐",out_fmt); c3.metric("📏","600²"); c4.metric("🎯",no)
-        with st.container(border=True):
-            c1,c2=st.columns(2)
-            with c1: inc_csv=st.checkbox("📄 CMS (csv+xlsx)",True); inc_src=st.checkbox("🗂️ Ảnh gốc",False)
-            with c2: multi=st.multiselect("📏 Size thêm",[s for s in SUPPORTED_SIZES if s!=600],default=[])
-            zn=st.text_input("Tên ZIP",f"thumbnails_{time.strftime('%Y%m%d_%H%M')}.zip")
-        if st.button("🚀 Tạo ZIP",type="primary",use_container_width=True):
-            sizes=[600]+sorted(multi); bg=_bg(); fl=out_fmt.lower(); total=len(mapping)*len(sizes)
-            prog=st.progress(0.0); zbuf=io.BytesIO(); cms=[]; errs=[]; t0=time.time(); done=0
-            dfex=df[df["id"].isin(mapping.keys())].reset_index(drop=True)
-            with zipfile.ZipFile(zbuf,"w",zipfile.ZIP_DEFLATED,compresslevel=6) as zf:
-                for _,row in dfex.iterrows():
-                    pid=row["id"]
+        st.markdown(f"#### 👁️ Preview {len(mapping)} thumbnail")
+        st.caption("Mọi thay đổi ở sidebar sẽ được áp dụng tức thì. Grid hiển thị tối đa 24 thumbnail đầu.")
+
+        c1, c2, c3 = st.columns([2, 1, 1])
+        with c1:
+            search = st.text_input("🔍 Tìm theo ID hoặc text", "")
+        with c2:
+            cols_per_row = st.selectbox("Cột / hàng", [2, 3, 4, 6], index=2)
+        with c3:
+            max_preview = st.selectbox("Số thumbnail preview", [12, 24, 48, 100], index=1)
+
+        df_view = df[df["id"].isin(mapping.keys())].copy()
+        if search:
+            s = search.lower()
+            df_view = df_view[
+                df_view["id"].str.lower().str.contains(s)
+                | df_view["text1"].str.lower().str.contains(s)
+                | df_view["text2"].str.lower().str.contains(s)
+            ]
+
+        if len(df_view) == 0:
+            st.warning("Không có kết quả khớp.")
+        else:
+            bg = load_background()
+            view_rows = df_view.head(max_preview).to_dict("records")
+            with st.spinner(f"Đang tạo {len(view_rows)} preview..."):
+                cols = st.columns(cols_per_row)
+                for i, row in enumerate(view_rows):
+                    pid = row["id"]
                     try:
-                        prod=Image.open(io.BytesIO(mapping[pid])); c=_cfg(pid)
-                        th600,info=build_thumbnail(prod,row["text1"],row["text2"],bg,c)
-                        sid=sanitize_filename(pid)
-                        for sz in sizes:
-                            done+=1; prog.progress(done/total,f"[{done}/{total}] {pid}@{sz}")
-                            img=th600 if sz==600 else th600.resize((sz,sz),Image.LANCZOS)
-                            sf="thumbnails" if sz==600 else f"thumbnails_{sz}"
-                            zf.writestr(f"{sf}/{sid}.{fl}",pil_to_bytes(img,fl,jpg_q))
-                        if inc_src:
-                            on=st.session_state.get("orig_names",{}); ext=Path(on.get(pid,f"{pid}.png")).suffix or ".png"
-                            zf.writestr(f"source/{sid}{ext}",mapping[pid])
-                        ho=any(k for k in st.session_state.get("overrides",{}).get(pid,{}) if k not in ("t1","t2"))
-                        cms.append({"id":pid,"text1":row["text1"],"text2":row["text2"],"filename":f"{sid}.{fl}",
-                                    "sizes":";".join(str(s) for s in sizes),"fonts":";".join(str(s) for s in info["font_sizes_used"]),
-                                    "shrunk":"yes" if info["any_shrunk"] else "no","custom":"yes" if ho else "no"})
+                        prod = Image.open(io.BytesIO(mapping[pid]))
+                        thumb, info = build_thumbnail(prod, row["text1"], row["text2"], bg, cfg)
+                        with cols[i % cols_per_row]:
+                            st.markdown("<div class='thumb-tile'>", unsafe_allow_html=True)
+                            st.image(thumb, use_container_width=True)
+                            shrunk_badge = " ⚡" if info["any_shrunk"] else ""
+                            st.markdown(
+                                f"<div class='thumb-id'>{pid}{shrunk_badge}</div>"
+                                f"<div class='thumb-meta'>{row['text1']}"
+                                + (f" · {row['text2']}" if row['text2'] else "")
+                                + f"<br>font: {info['font_sizes_used']}</div>"
+                                  "</div>",
+                                unsafe_allow_html=True,
+                            )
                     except Exception as e:
-                        done+=len(sizes); errs.append(f"{pid}: {str(e)[:80]}")
-                        cms.append({"id":pid,"text1":row.get("text1",""),"text2":row.get("text2",""),"filename":"ERROR","sizes":"","fonts":"","shrunk":str(e)[:50],"custom":"no"})
-                if inc_csv and cms:
-                    cdf=pd.DataFrame(cms); zf.writestr("cms.csv",cdf.to_csv(index=False,encoding="utf-8-sig").encode("utf-8-sig"))
-                    xb=io.BytesIO()
-                    with pd.ExcelWriter(xb,engine="openpyxl") as w: cdf.to_excel(w,index=False,sheet_name="CMS")
-                    zf.writestr("cms.xlsx",xb.getvalue())
-                zf.writestr("config.json",json.dumps(_export_cfg(),indent=2,ensure_ascii=False))
-            prog.empty()
-            if errs: st.warning(f"⚠️ {len(errs)} lỗi")
-            else: st.success(f"✅ {len(dfex)} SP × {len(sizes)} size — {time.time()-t0:.1f}s")
-            st.download_button("⬇️ TẢI ZIP",zbuf.getvalue(),zn,"application/zip",use_container_width=True)
+                        with cols[i % cols_per_row]:
+                            st.error(f"❌ {pid}: {e}")
+
+            if len(df_view) > max_preview:
+                st.info(f"Hiện {max_preview}/{len(df_view)} kết quả. Tăng `Số thumbnail preview` nếu cần xem thêm.")
+
+
+# ============ EXPORT ZIP ============
+with tab_export:
+    df = st.session_state.get("df")
+    mapping = st.session_state.get("mapping", {})
+    if df is None or not mapping:
+        st.info("👈 Hoàn tất bước 1 để xuất ZIP.")
+    else:
+        st.markdown(f"#### 📦 Xuất {len(mapping)} thumbnail + CSV CMS")
+        st.caption(
+            "Khi bấm **Tạo ZIP**, app sẽ render từng thumbnail với cấu hình hiện tại, "
+            "đóng gói vào file ZIP kèm **cms.csv** (id, text1, text2, filename, font_size, shrunk)."
+        )
+
+        colL, colR = st.columns([2, 1])
+        with colL:
+            include_csv = st.checkbox("Kèm file CSV CMS", value=True)
+            include_source = st.checkbox("Kèm ảnh gốc vào thư mục `source/`", value=False,
+                                         help="Tuỳ chọn: đính kèm ảnh gốc chưa xử lý để đối chiếu.")
+            zip_name = st.text_input("Tên file ZIP", f"thumbnails_{time.strftime('%Y%m%d_%H%M%S')}.zip")
+        with colR:
+            st.markdown(
+                f"""
+                <div class='stat-card' style='text-align:center;'>
+                    <h3>{len(mapping)}</h3>
+                    <p>Thumbnail sẽ xuất · {out_meta['format']}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        if st.button("🚀 Tạo ZIP", type="primary", use_container_width=True):
+            bg = load_background()
+            fmt = out_meta["format"].lower()
+
+            progress = st.progress(0.0, text="Chuẩn bị...")
+            zip_buf = io.BytesIO()
+            cms_rows = []
+            t0 = time.time()
+
+            df_export = df[df["id"].isin(mapping.keys())].reset_index(drop=True)
+            total = len(df_export)
+
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+                for i, row in df_export.iterrows():
+                    pid = row["id"]
+                    progress.progress((i + 1) / total, text=f"Đang render [{i + 1}/{total}] {pid}")
+                    try:
+                        prod = Image.open(io.BytesIO(mapping[pid]))
+                        thumb, info = build_thumbnail(prod, row["text1"], row["text2"], bg, cfg)
+                        safe_id = sanitize_filename(pid)
+                        fname = f"{safe_id}.{fmt}"
+                        zf.writestr(
+                            f"thumbnails/{fname}",
+                            pil_to_bytes(thumb, fmt, out_meta["jpg_quality"]),
+                        )
+                        if include_source:
+                            orig_names = st.session_state.get("orig_names", {})
+                            ext = Path(orig_names.get(pid, f"{pid}.png")).suffix or ".png"
+                            zf.writestr(f"source/{safe_id}{ext}", mapping[pid])
+
+                        cms_rows.append({
+                            "id": pid,
+                            "text1": row["text1"],
+                            "text2": row["text2"],
+                            "filename": fname,
+                            "font_sizes_used": ";".join(str(s) for s in info["font_sizes_used"]),
+                            "shrunk": "yes" if info["any_shrunk"] else "no",
+                            "width": CANVAS_SIZE,
+                            "height": CANVAS_SIZE,
+                        })
+                    except Exception as e:
+                        cms_rows.append({
+                            "id": pid, "text1": row["text1"], "text2": row["text2"],
+                            "filename": "", "font_sizes_used": "", "shrunk": "ERROR",
+                            "width": 0, "height": 0, "error": str(e),
+                        })
+
+                if include_csv:
+                    cms_df = pd.DataFrame(cms_rows)
+                    csv_data = cms_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+                    zf.writestr("cms.csv", csv_data)
+
+                    xbuf = io.BytesIO()
+                    with pd.ExcelWriter(xbuf, engine="openpyxl") as w:
+                        cms_df.to_excel(w, index=False, sheet_name="CMS")
+                    zf.writestr("cms.xlsx", xbuf.getvalue())
+
+                readme = (
+                    "THUMBNAIL BUILDER PRO — EXPORT\n"
+                    f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Items: {total}\n"
+                    f"Canvas: {CANVAS_SIZE}×{CANVAS_SIZE}\n"
+                    f"Format: {fmt.upper()}\n\n"
+                    "Folders:\n"
+                    "  thumbnails/ — thumbnail 600×600 đặt tên theo id\n"
+                    "  source/     — (tuỳ chọn) ảnh gốc\n"
+                    "  cms.csv, cms.xlsx — CMS metadata\n"
+                )
+                zf.writestr("README.txt", readme)
+
+            progress.empty()
+            elapsed = time.time() - t0
+            st.success(f"✅ Hoàn tất {total} thumbnail trong {elapsed:.1f}s.")
+
+            st.download_button(
+                "⬇️ TẢI FILE ZIP",
+                zip_buf.getvalue(),
+                zip_name,
+                "application/zip",
+                use_container_width=True,
+            )
