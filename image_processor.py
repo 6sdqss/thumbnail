@@ -48,18 +48,19 @@ class ThumbnailConfig:
     center_mode: str = "centroid"       # "centroid" | "bbox"
 
     # Font / text
-    font_size: float = 28.5
+    font_size: float = 20.0
     font_weight: int = 800
     font_family: str = "Montserrat-ExtraBold"
     text_color: Tuple[int, int, int] = (0, 0, 0)
     text_padding: int = 24             # horizontal padding inside pill
 
-    # Pill geometry (khớp PS guides)
-    pill_left: int = 20
-    pill_height: int = 49
-    pill1_top: int = 15
-    pill2_gap: int = 13
+    # Pill geometry (khớp PS guides — strict absolute px)
+    pill_left: int = 62               # x from canvas left
+    pill_height: int = 56             # FIXED height, never scale
+    pill1_top: int = 78               # y of first pill
+    pill2_gap: int = 10               # EXACT 10px spacing
     max_pill_right: int = 580
+    pill_radius: int = 28             # border-radius (= height/2 for capsule)
 
     # Pill shadow
     shadow_offset_x: int = 2
@@ -260,7 +261,7 @@ def _draw_pill(canvas: Image.Image, text: str, x: int, y: int,
     # Pill dimensions
     pill_w = int(tw + cfg.text_padding * 2)
     pill_h = cfg.pill_height
-    radius = pill_h // 2  # Full capsule
+    radius = cfg.pill_radius  # Fixed 28px, do NOT derive from height
 
     # Clamp width
     max_w = cfg.max_pill_right - x
