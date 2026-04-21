@@ -241,11 +241,10 @@ def draw_pill_with_shadow(canvas, pill_box, shadow_offset=(3,4), shadow_blur=5,
 
 # ════ Fix #4: PILL + TEXT SUPERSAMPLED CÙNG NHAU ════
 def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
-                          font_family=None, text_color=(0,0,0), text_padding=26,
-                          shadow_offset=(3,4), shadow_blur=5, shadow_opacity=90,
-                          fill_color=(255,255,255)):
-    """Vẽ pill + text cùng nhau ở 4× supersampling rồi downscale.
-    Cả pill viền VÀ text đều sắc nét như nhau."""
+                          font_family=None, text_color=(0,0,0), text_padding=24,
+                          shadow_offset=(2,3), shadow_blur=0, shadow_opacity=50,
+                          fill_color=(255,255,255), text_y_nudge=-2):
+    # ─── PHẦN 1: VẼ KHUNG SUPERSAMPLED (Cho viền góc bo mịn màng) ───
     SS = 4
     left, top, right, bottom = pill_box
     w, h = right-left, bottom-top
@@ -256,9 +255,10 @@ def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
     margin = max(abs(sx), abs(sy)) + blur_extra + 4
     lw, lh = w + margin*2, h + margin*2
 
-    # 1. Shadow
     layer = Image.new("RGBA", (lw*SS, lh*SS), (0,0,0,0))
     d = ImageDraw.Draw(layer)
+    
+    # Vẽ Bóng
     d.rounded_rectangle(
         [(margin+sx)*SS, (margin+sy)*SS, (margin+sx+w)*SS, (margin+sy+h)*SS],
         radius=radius*SS, fill=(0,0,0,shadow_opacity))
@@ -266,27 +266,29 @@ def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
     if shadow_blur > 0:
         layer = layer.filter(ImageFilter.GaussianBlur(shadow_blur * SS))
 
-    # 2. White pill
+    # Vẽ Pill trắng
     d2 = ImageDraw.Draw(layer)
     d2.rounded_rectangle(
         [margin*SS, margin*SS, (margin+w)*SS, (margin+h)*SS],
         radius=radius*SS, fill=(*fill_color, 255))
 
-    # 3. Text ở SS scale (Fix #4)
-    if text:
-        font_ss = load_font(font_size * SS, font_weight, font_family)
-        bbox_t = d2.textbbox((0,0), text, font=font_ss)
-        tw = bbox_t[2] - bbox_t[0]
-        th = bbox_t[3] - bbox_t[1]
-        y_off = bbox_t[1]
-
-        tx = margin*SS + text_padding*SS
-        ty = margin*SS + (h*SS - th) // 2 - y_off
-        d2.text((tx, ty), text, font=font_ss, fill=text_color)
-
-    # 4. Downscale
+    # Nén lại kích thước thật 1x và dán vào hình gốc
     layer = layer.resize((lw, lh), Image.LANCZOS)
     canvas.alpha_composite(layer, (left-margin, top-margin))
+
+    # ─── PHẦN 2: VẼ TEXT TRỰC TIẾP LÊN MẶT 1X (Sắc nét, không méo) ───
+    if text:
+        draw = ImageDraw.Draw(canvas)
+        # Sử dụng size font thật 1x, không nhân 4
+        font_native = load_font(font_size, font_weight, font_family)
+        
+        tx = left + text_padding
+        center_y = top + h / 2 
+        final_text_y = center_y + text_y_nudge
+        
+        # Đóng mộc chữ trực tiếp lên canvas cuối cùng
+        draw.text((tx, final_text_y), text, font=font_native, fill=text_color, anchor="lm")
+
     return font_size
 
 
