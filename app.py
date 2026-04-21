@@ -27,9 +27,9 @@ from auth import require_login, logout_btn
 
 # ═══ HẰNG SỐ (khớp PS — v9) ═══
 SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 60       # Fix #3: blur 5
-FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 14
+FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 12
 DEFAULT_FONT_FAMILY = "Montserrat-Bold"
-DEFAULT_FONT_SIZE = 29.5                                          # Fix #7: PS 20.5pt@96DPI
+DEFAULT_FONT_SIZE = 32.5                                          # Fix #7: PS 20.5pt@96DPI
 PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 14
 MAX_PILL_RIGHT = 520
 MAX_UPLOAD_DIM, MAX_UPLOAD_MB, MIN_SRC_DIM = 1600, 20, 400
