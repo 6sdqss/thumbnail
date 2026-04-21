@@ -16,14 +16,13 @@ from image_processor import (
 )
 from auth import require_login, logout_btn
 
-# ═══ HẰNG SỐ (Khớp chính xác PS guides — absolute px) ═══
-SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 2, 3, 0, 50
-FONT_WEIGHT = 800; WHITE_TOL = 18; TEXT_PADDING = 24
-DEFAULT_FONT_FAMILY = "Montserrat-ExtraBold"
-DEFAULT_FONT_SIZE = 28.5  # Khớp PS reference, Montserrat ExtraBold
-PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 13
-PILL_RADIUS = 24  # = PILL_HEIGHT // 2
-MAX_PILL_RIGHT = 580
+# ═══ HẰNG SỐ (khớp PS) ═══
+SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 90
+FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 26
+DEFAULT_FONT_FAMILY = "Montserrat-Bold"
+DEFAULT_FONT_SIZE = 22.2
+PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 14
+MAX_PILL_RIGHT = 520
 MAX_UPLOAD_DIM, MAX_UPLOAD_MB, MIN_SRC_DIM = 1600, 20, 400
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
 APP_VERSION = "8.0"
@@ -80,12 +79,12 @@ def _bg():
 
 # ═══ PRESETS ═══
 PRESETS = {
-    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=55,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=28.5),
-    "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=28.5),
-    "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=28.5),
-    "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=28.5),
-    "👕 Thời trang":      dict(top_margin=155,bottom_margin=45,side_padding=35,product_scale=1.05,center_mode="bbox",font_size=28.5),
-    "📱 ĐT dọc":          dict(top_margin=160,bottom_margin=50,side_padding=70,product_scale=1.0,center_mode="bbox",font_size=28.5),
+    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=55,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=22.2),
+    "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=22.2),
+    "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=22.2),
+    "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=22.2),
+    "👕 Thời trang":      dict(top_margin=155,bottom_margin=45,side_padding=35,product_scale=1.05,center_mode="bbox",font_size=22.2),
+    "📱 ĐT dọc":          dict(top_margin=160,bottom_margin=50,side_padding=70,product_scale=1.0,center_mode="bbox",font_size=22.2),
 }
 
 def _init():
@@ -157,7 +156,7 @@ def _eff_df():
 def _cfg(pid=None):
     g={k:st.session_state.get(f"cfg_{k}",v) for k,v in [
         ("top_margin",155),("bottom_margin",55),("side_padding",40),
-        ("product_scale",1.0),("center_mode","centroid"),("font_size",28.5)]}
+        ("product_scale",1.0),("center_mode","centroid"),("font_size",22.2)]}
     ov=st.session_state.get("overrides",{}).get(pid or "",{})
     for k in g:
         if ov.get(k) is not None: g[k]=ov[k]
@@ -168,7 +167,7 @@ def _cfg(pid=None):
         white_tolerance=WHITE_TOL,show_background=True,
         center_mode=g["center_mode"],product_scale=g["product_scale"],
         pill_left=PILL_LEFT,pill_height=PILL_HEIGHT,pill1_top=PILL1_TOP,pill2_gap=PILL2_GAP,
-        pill_radius=PILL_RADIUS,max_pill_right=MAX_PILL_RIGHT,
+        max_pill_right=MAX_PILL_RIGHT,
         shadow_offset_x=SHADOW_X,shadow_offset_y=SHADOW_Y,shadow_blur=SHADOW_BLUR,shadow_opacity=SHADOW_OP,
         font_family=st.session_state.get("cfg_font_family",DEFAULT_FONT_FAMILY),
     )
@@ -227,7 +226,7 @@ with st.sidebar:
     st.markdown("**✒️ Font**")
     try:
         af=list_available_fonts(); fl=list(af.keys())
-        di=fl.index("Montserrat-ExtraBold") if "Montserrat-ExtraBold" in fl else 0
+        di=fl.index("Montserrat-Bold") if "Montserrat-Bold" in fl else 0
         st.selectbox("Loại chữ",fl,index=di,key="cfg_font_family")
     except: st.session_state["cfg_font_family"]=DEFAULT_FONT_FAMILY
     st.number_input("Kích thước",9.0,40.0,key="cfg_font_size",step=0.5,format="%.1f")
@@ -258,7 +257,7 @@ with st.sidebar:
 c1,c2,c3,c4=st.columns([3,1,1,1])
 with c1:
     st.markdown("### 🖼️ Thumbnail Builder Pro")
-    st.caption("Dynamic pill · Khớp 100% Canva Layout · Dark theme")
+    st.caption("Dynamic pill · Montserrat Bold (PS 20.5pt) · Dark theme")
 df=st.session_state.get("df"); mapping=st.session_state.get("mapping",{})
 ov_count=sum(1 for p in mapping if any(k for k in st.session_state.get("overrides",{}).get(p,{}) if k not in ("t1","t2")))
 with c2: st.metric("📋 Excel",len(df) if df is not None else 0)
@@ -318,7 +317,7 @@ with tab2:
     cl,cr=st.columns([1,1],gap="large")
     with cl:
         si=st.file_uploader("Ảnh",type=["png","jpg","jpeg","webp"],key="su")
-        sid=st.text_input("ID","DEMO001"); st1=st.text_input("Text 1","BLUETOOTH 5.4"); st2=st.text_input("Text 2","CỔNG SẠC TYPE-C")
+        sid=st.text_input("ID","DEMO001"); st1=st.text_input("Text 1","SỨC CHỨA 24 CHAI"); st2=st.text_input("Text 2","GIÁ KỆ GỖ SỒI CAO CẤP")
     with cr:
         if si:
             try:
@@ -397,7 +396,7 @@ with tab4:
                     cs=ov.get("side_padding",st.session_state.get("cfg_side_padding",40))
                     csc=ov.get("product_scale",st.session_state.get("cfg_product_scale",1.0))
                     cc=ov.get("center_mode",st.session_state.get("cfg_center_mode","centroid"))
-                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",28.5))
+                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",22.2))
                     c1,c2=st.columns(2)
                     with c1: nt=st.number_input("Trên",0,300,int(ct),5,key=f"ot_{pid}"); ns=st.number_input("Side",0,100,int(cs),5,key=f"os_{pid}"); nsc=st.number_input("Zoom",0.5,1.5,float(csc),0.05,format="%.2f",key=f"oz_{pid}")
                     with c2: nb=st.number_input("Dưới",0,250,int(cb),5,key=f"ob_{pid}"); nf=st.number_input("Font",9.0,40.0,float(cf),0.5,format="%.1f",key=f"of_{pid}"); nc=st.radio("Căn",["centroid","bbox"],index=0 if cc=="centroid" else 1,horizontal=True,key=f"oc_{pid}",format_func=lambda x:"TT" if x=="centroid" else "BBox")
