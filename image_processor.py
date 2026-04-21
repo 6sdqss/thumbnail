@@ -1,11 +1,16 @@
 """
-image_processor.py v8
+image_processor.py v9
 ═════════════════════
-- Pill DYNAMIC WIDTH theo text (ngắn=ngắn, dài=dài)
-- Pill HEIGHT FIX CỨNG (49px khớp PS)
-- Supersampling 4× cho viền nét mịn
-- Font picker (chọn family)
-- Montserrat Bold 20.5pt mặc định (khớp PS)
+Nâng cấp từ v8:
+  Fix #1: White canvas base — xoá lỗi góc tối khi bg có bo tròn
+  Fix #2: Product shadow — bóng elip mờ dưới chân sản phẩm (DMX style)
+  Fix #3: Pill shadow blur — kích hoạt blur 5px cho shadow pill
+  Fix #4: Supersampled text+pill — vẽ text cùng pill ở 4× rồi downscale
+  Fix #5: Auto top_margin — tự đẩy sản phẩm xuống nếu pill che
+  Fix #6: Bottom gradient — gradient nhẹ đáy canvas (floor effect)
+  Fix #7: Font size PS→Pillow — 20.5pt@96DPI = 27px Pillow
+
+Giữ nguyên logic v8: pill dynamic width, centroid centering, font picker.
 """
 from __future__ import annotations
 
@@ -25,18 +30,20 @@ CANVAS_SIZE = 600
 DEFAULT_TOP_MARGIN = 155
 DEFAULT_BOTTOM_MARGIN = 55
 DEFAULT_SIDE_PADDING = 40
-DEFAULT_FONT_SIZE = 22.2      # khớp PS 20.5pt
+
+# Fix #7: PS 20.5pt × (96DPI / 72DPI) = 27.3px Pillow
+DEFAULT_FONT_SIZE = 27.0
 DEFAULT_TEXT_PADDING = 26     # khớp PS X=46 - pill_left=20
 
 PILL_LEFT      = 20
 PILL_HEIGHT    = 49           # FIX CỨNG từ asset gốc
 PILL1_TOP      = 15           # từ asset gốc
 PILL2_GAP      = 14           # 78-64 = 14 (từ asset)
-MAX_PILL_RIGHT = 520          # pill không vượt quá x=520 (cách mép phải 80px)
+MAX_PILL_RIGHT = 520          # pill không vượt quá x=520
 MIN_PILL_WIDTH = 100          # pill tối thiểu 100px
 
 
-# ════ SMART FIT ════
+# ════ SMART FIT (giữ nguyên v8) ════
 def _content_bbox(img, alpha_threshold=10):
     if img.mode != "RGBA": return img.getbbox()
     alpha = np.array(img.split()[-1])
@@ -82,7 +89,7 @@ def smart_fit_centroid(img, target_w, target_h):
     return canvas
 
 
-# ════ TÁCH NỀN TRẮNG ════
+# ════ TÁCH NỀN TRẮNG (giữ nguyên v8) ════
 def _edge_connected(mask):
     h, w = mask.shape
     visited = np.zeros_like(mask, dtype=bool)
@@ -129,7 +136,7 @@ def remove_background_ai(img):
 _REMBG_SESSION = None
 
 
-# ════ FONT ════
+# ════ FONT (giữ nguyên v8) ════
 def _font_dir(): return os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
 _FONT_CACHE: dict = {}
@@ -194,34 +201,165 @@ def load_font(size: float, weight: int = 700, font_family: Optional[str] = None)
     f = ImageFont.load_default(); _FONT_CACHE[key] = f; return f
 
 
-# ════ PILL VỚI SHADOW (supersampled, sắc nét) ════
-def draw_pill_with_shadow(canvas, pill_box, shadow_offset=(3,4), shadow_blur=0,
+# ════ PILL VỚI SHADOW — Fix #3: blur thực sự hoạt động ════
+def draw_pill_with_shadow(canvas, pill_box, shadow_offset=(3,4), shadow_blur=5,
                           shadow_opacity=90, fill_color=(255,255,255)):
-    """Vẽ pill + duplicate shadow. Supersampling 4× cho viền nét."""
+    """Vẽ pill + shadow. Supersampling 4× cho viền nét.
+    Fix #3: shadow_blur giờ thực sự áp dụng GaussianBlur."""
     SS = 4
     left, top, right, bottom = pill_box
     w, h = right-left, bottom-top
     radius = h // 2
     sx, sy = shadow_offset
-    margin = max(abs(sx), abs(sy)) + 4
+
+    # Tăng margin cho blur spread
+    blur_extra = (shadow_blur + 2) if shadow_blur > 0 else 0
+    margin = max(abs(sx), abs(sy)) + blur_extra + 4
     lw, lh = w + margin*2, h + margin*2
 
+    # 1. Vẽ shadow trên layer (SS scale)
     layer = Image.new("RGBA", (lw*SS, lh*SS), (0,0,0,0))
     d = ImageDraw.Draw(layer)
-    # Shadow pill
     d.rounded_rectangle(
         [(margin+sx)*SS, (margin+sy)*SS, (margin+sx+w)*SS, (margin+sy+h)*SS],
         radius=radius*SS, fill=(0,0,0,shadow_opacity))
-    # Pill trắng
-    d.rounded_rectangle(
+
+    # 2. Áp dụng blur cho shadow (Fix #3)
+    if shadow_blur > 0:
+        layer = layer.filter(ImageFilter.GaussianBlur(shadow_blur * SS))
+
+    # 3. Vẽ pill trắng lên trên shadow đã blur
+    d2 = ImageDraw.Draw(layer)
+    d2.rounded_rectangle(
         [margin*SS, margin*SS, (margin+w)*SS, (margin+h)*SS],
         radius=radius*SS, fill=(*fill_color, 255))
-    # Downscale
+
+    # 4. Downscale
     layer = layer.resize((lw, lh), Image.LANCZOS)
     canvas.alpha_composite(layer, (left-margin, top-margin))
 
 
-# ════ ĐO TEXT + AUTO FIT ════
+# ════ Fix #4: PILL + TEXT SUPERSAMPLED CÙNG NHAU ════
+def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
+                          font_family=None, text_color=(0,0,0), text_padding=26,
+                          shadow_offset=(3,4), shadow_blur=5, shadow_opacity=90,
+                          fill_color=(255,255,255)):
+    """Vẽ pill + text cùng nhau ở 4× supersampling rồi downscale.
+    Cả pill viền VÀ text đều sắc nét như nhau."""
+    SS = 4
+    left, top, right, bottom = pill_box
+    w, h = right-left, bottom-top
+    radius = h // 2
+    sx, sy = shadow_offset
+
+    blur_extra = (shadow_blur + 2) if shadow_blur > 0 else 0
+    margin = max(abs(sx), abs(sy)) + blur_extra + 4
+    lw, lh = w + margin*2, h + margin*2
+
+    # 1. Shadow
+    layer = Image.new("RGBA", (lw*SS, lh*SS), (0,0,0,0))
+    d = ImageDraw.Draw(layer)
+    d.rounded_rectangle(
+        [(margin+sx)*SS, (margin+sy)*SS, (margin+sx+w)*SS, (margin+sy+h)*SS],
+        radius=radius*SS, fill=(0,0,0,shadow_opacity))
+
+    if shadow_blur > 0:
+        layer = layer.filter(ImageFilter.GaussianBlur(shadow_blur * SS))
+
+    # 2. White pill
+    d2 = ImageDraw.Draw(layer)
+    d2.rounded_rectangle(
+        [margin*SS, margin*SS, (margin+w)*SS, (margin+h)*SS],
+        radius=radius*SS, fill=(*fill_color, 255))
+
+    # 3. Text ở SS scale (Fix #4)
+    if text:
+        font_ss = load_font(font_size * SS, font_weight, font_family)
+        bbox_t = d2.textbbox((0,0), text, font=font_ss)
+        tw = bbox_t[2] - bbox_t[0]
+        th = bbox_t[3] - bbox_t[1]
+        y_off = bbox_t[1]
+
+        tx = margin*SS + text_padding*SS
+        ty = margin*SS + (h*SS - th) // 2 - y_off
+        d2.text((tx, ty), text, font=font_ss, fill=text_color)
+
+    # 4. Downscale
+    layer = layer.resize((lw, lh), Image.LANCZOS)
+    canvas.alpha_composite(layer, (left-margin, top-margin))
+    return font_size
+
+
+# ════ (giữ lại cho backward compat) ════
+def draw_text_in_pill(canvas, text, pill_box, font_size, font_weight=700,
+                      font_family=None, color=(0,0,0), text_padding=26):
+    """Vẽ text căn trái + căn giữa dọc trong pill_box. (Legacy v8)"""
+    if not text: return font_size
+    draw = ImageDraw.Draw(canvas)
+    left, top, right, bottom = pill_box
+    f = load_font(font_size, font_weight, font_family)
+    tw, th, y_off = _measure(draw, text, f)
+    x = left + text_padding
+    y = top + (bottom - top - th) // 2 - y_off
+    draw.text((x, y), text, font=f, fill=color)
+    return font_size
+
+
+# ════ Fix #2: BÓNG SẢN PHẨM (elip mờ dưới chân) ════
+def draw_product_shadow(canvas, fitted_img, paste_x, paste_y,
+                        canvas_w, canvas_h, opacity=28, blur_radius=12):
+    """Vẽ bóng elip mờ dưới chân sản phẩm (DMX floor shadow style).
+    Tự tính vị trí dựa trên content thực tế của sản phẩm."""
+    bbox = _content_bbox(fitted_img)
+    if not bbox:
+        return
+
+    content_left, content_top, content_right, content_bottom = bbox
+
+    # Toạ độ trên canvas
+    abs_bottom = paste_y + content_bottom
+    abs_center_x = paste_x + (content_left + content_right) // 2
+    content_w = content_right - content_left
+
+    # Kích thước elip bóng — tỷ lệ theo sản phẩm
+    shadow_half_w = max(60, int(content_w * 0.38))
+    shadow_half_h = max(10, int(content_w * 0.04))
+
+    # Vị trí: ngay dưới chân sản phẩm
+    shadow_y = min(abs_bottom + 2, canvas_h - 15)
+
+    layer = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    d.ellipse([
+        abs_center_x - shadow_half_w,
+        shadow_y - shadow_half_h,
+        abs_center_x + shadow_half_w,
+        shadow_y + shadow_half_h,
+    ], fill=(0, 0, 0, opacity))
+
+    layer = layer.filter(ImageFilter.GaussianBlur(blur_radius))
+    canvas.alpha_composite(layer)
+
+
+# ════ Fix #6: GRADIENT ĐÁY CANVAS ════
+def apply_bottom_gradient(canvas, start_ratio=0.78, darken_amount=0.07):
+    """Gradient nhẹ từ trắng sang xám nhạt ở đáy canvas (DMX floor effect).
+    start_ratio=0.78 → bắt đầu ở 78% chiều cao.
+    darken_amount=0.07 → tối đa tối 7% ở mép dưới cùng."""
+    w, h = canvas.size
+    start_y = int(h * start_ratio)
+    gradient_h = h - start_y
+    if gradient_h <= 0:
+        return
+
+    arr = np.array(canvas, dtype=np.float32)
+    # Vectorized gradient
+    t = np.linspace(0, 1, gradient_h).reshape(-1, 1, 1)
+    arr[start_y:, :, :3] *= (1.0 - darken_amount * t)
+    canvas.paste(Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA"))
+
+
+# ════ ĐO TEXT + AUTO FIT (giữ nguyên v8) ════
 def _measure(draw, text, font):
     bbox = draw.textbbox((0,0), text, font=font)
     return bbox[2]-bbox[0], bbox[3]-bbox[1], bbox[1]
@@ -236,19 +374,6 @@ def measure_text_width(text: str, font_size: float, font_weight: int = 700,
     tw, th, _ = _measure(d, text, f)
     return (tw, th)
 
-def draw_text_in_pill(canvas, text, pill_box, font_size, font_weight=700,
-                      font_family=None, color=(0,0,0), text_padding=26):
-    """Vẽ text căn trái + căn giữa dọc trong pill_box đã biết."""
-    if not text: return font_size
-    draw = ImageDraw.Draw(canvas)
-    left, top, right, bottom = pill_box
-    f = load_font(font_size, font_weight, font_family)
-    tw, th, y_off = _measure(draw, text, f)
-    x = left + text_padding
-    y = top + (bottom - top - th) // 2 - y_off
-    draw.text((x, y), text, font=f, fill=color)
-    return font_size
-
 def calc_dynamic_pill(text: str, font_size: float, font_weight: int,
                       font_family: Optional[str], text_padding: int,
                       pill_left: int, pill_top: int, pill_height: int,
@@ -256,13 +381,6 @@ def calc_dynamic_pill(text: str, font_size: float, font_weight: int,
                       ) -> Tuple[Tuple[int,int,int,int], float]:
     """
     Tính pill_box DYNAMIC WIDTH dựa theo text.
-
-    Logic:
-      1. Đo text width ở font_size gốc
-      2. pill_right = pill_left + text_padding*2 + text_width
-      3. Nếu pill_right > max_right → shrink font cho vừa
-      4. pill_right >= pill_left + MIN_PILL_WIDTH (tối thiểu)
-
     Returns: (pill_box, font_size_used)
     """
     if not text:
@@ -310,34 +428,61 @@ class ThumbnailConfig:
     pill1_top: int = PILL1_TOP
     pill2_gap: int = PILL2_GAP
     max_pill_right: int = MAX_PILL_RIGHT
-    # Shadow
+    # Shadow — Fix #3: blur mặc định 5
     shadow_offset_x: int = 3
     shadow_offset_y: int = 4
-    shadow_blur: int = 0
+    shadow_blur: int = 5
     shadow_opacity: int = 90
     # Font family
     font_family: Optional[str] = None
+    # Fix #2: bóng sản phẩm
+    product_shadow: bool = True
+    product_shadow_opacity: int = 28
+    product_shadow_blur: int = 12
+    # Fix #6: gradient đáy
+    bottom_gradient: bool = False
+    bottom_gradient_strength: float = 0.07
 
 
-# ════ BUILD THUMBNAIL ════
+# ════ BUILD THUMBNAIL (nâng cấp v9) ════
 def build_thumbnail(product_image, text1, text2, background, config):
     W = H = CANVAS_SIZE
     info = {}
 
-    # 1. Background
-    if config.show_background:
-        bg = background.convert("RGBA").resize((W,H), Image.LANCZOS)
-    else:
-        bg = Image.new("RGBA", (W,H), (255,255,255,255))
+    # ── Fix #1: Luôn bắt đầu bằng canvas TRẮNG ──
+    bg = Image.new("RGBA", (W, H), (255, 255, 255, 255))
 
-    # 2. Sản phẩm
+    # Composite background lên trên (nếu bg có bo góc → trắng lộ thay vì đen)
+    if config.show_background:
+        bg_layer = background.convert("RGBA").resize((W, H), Image.LANCZOS)
+        bg.alpha_composite(bg_layer)
+
+    # ── Fix #6: Gradient đáy ──
+    if config.bottom_gradient:
+        apply_bottom_gradient(bg, darken_amount=config.bottom_gradient_strength)
+
+    # ── Fix #5: Auto-adjust top_margin ──
+    t1 = (text1 or "").strip()
+    t2 = (text2 or "").strip()
+
+    pill_area_bottom = 0
+    if t1:
+        pill_area_bottom = config.pill1_top + config.pill_height
+    if t2:
+        pill_area_bottom = config.pill1_top + config.pill_height + config.pill2_gap + config.pill_height
+
+    # Đảm bảo sản phẩm không đè lên pill (cách ít nhất 20px)
+    min_top = pill_area_bottom + 20 if pill_area_bottom > 0 else 0
+    effective_top = max(config.top_margin, min_top)
+
+    # ── Sản phẩm (giữ nguyên logic v8) ──
     prod = product_image.convert("RGBA")
     if config.remove_bg_mode == "white":
         prod = remove_white_background(prod, config.white_tolerance)
     elif config.remove_bg_mode == "ai":
         prod = remove_background_ai(prod)
 
-    area_top = config.top_margin
+    area_top = effective_top
     area_h = max(1, H - config.bottom_margin - area_top)
     area_w = W - 2 * config.side_padding
     ew = max(1, int(area_w * config.product_scale))
@@ -350,11 +495,17 @@ def build_thumbnail(product_image, text1, text2, background, config):
 
     px = (W - fitted.width) // 2
     py = area_top + (area_h - fitted.height) // 2
+
+    # ── Fix #2: Bóng sản phẩm (vẽ TRƯỚC sản phẩm) ──
+    if config.product_shadow:
+        draw_product_shadow(bg, fitted, px, py, W, H,
+                            opacity=config.product_shadow_opacity,
+                            blur_radius=config.product_shadow_blur)
+
+    # Paste sản phẩm
     bg.paste(fitted, (px, py), fitted)
 
-    # 3. Pill + Text (DYNAMIC WIDTH)
-    t1 = (text1 or "").strip()
-    t2 = (text2 or "").strip()
+    # ── Pill + Text — Fix #3 + Fix #4: supersampled cùng nhau ──
     sizes_used = []
     sh_off = (config.shadow_offset_x, config.shadow_offset_y)
 
@@ -364,9 +515,11 @@ def build_thumbnail(product_image, text1, text2, background, config):
             config.text_padding, config.pill_left, config.pill1_top,
             config.pill_height, config.max_pill_right,
         )
-        draw_pill_with_shadow(bg, pill1, sh_off, config.shadow_blur, config.shadow_opacity)
-        draw_text_in_pill(bg, t1, pill1, sz1, config.font_weight,
-                          config.font_family, config.text_color, config.text_padding)
+        draw_pill_and_text_ss(
+            bg, t1, pill1, sz1, config.font_weight,
+            config.font_family, config.text_color, config.text_padding,
+            sh_off, config.shadow_blur, config.shadow_opacity,
+        )
         sizes_used.append(round(sz1, 2))
 
     if t2:
@@ -376,9 +529,11 @@ def build_thumbnail(product_image, text1, text2, background, config):
             config.text_padding, config.pill_left, pill2_top,
             config.pill_height, config.max_pill_right,
         )
-        draw_pill_with_shadow(bg, pill2, sh_off, config.shadow_blur, config.shadow_opacity)
-        draw_text_in_pill(bg, t2, pill2, sz2, config.font_weight,
-                          config.font_family, config.text_color, config.text_padding)
+        draw_pill_and_text_ss(
+            bg, t2, pill2, sz2, config.font_weight,
+            config.font_family, config.text_color, config.text_padding,
+            sh_off, config.shadow_blur, config.shadow_opacity,
+        )
         sizes_used.append(round(sz2, 2))
 
     info["font_sizes_used"] = sizes_used
@@ -389,7 +544,7 @@ def build_thumbnail(product_image, text1, text2, background, config):
     return bg.convert("RGB"), info
 
 
-# ════ TIỆN ÍCH ════
+# ════ TIỆN ÍCH (giữ nguyên v8) ════
 def pil_to_bytes(img, fmt="PNG", quality=95):
     buf = io.BytesIO()
     if fmt.upper() in ("JPEG","JPG"):
