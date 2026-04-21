@@ -26,8 +26,8 @@ from image_processor import (
 from auth import require_login, logout_btn
 
 # ═══ HẰNG SỐ (khớp PS — v9) ═══
-SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 5, 90       # Fix #3: blur 5
-FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 26
+SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 60       # Fix #3: blur 5
+FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 18
 DEFAULT_FONT_FAMILY = "Montserrat-Bold"
 DEFAULT_FONT_SIZE = 27.0                                          # Fix #7: PS 20.5pt@96DPI
 PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 14
