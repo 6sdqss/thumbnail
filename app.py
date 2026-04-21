@@ -1,6 +1,15 @@
 """
-app.py — Thumbnail Builder Pro v8
+app.py — Thumbnail Builder Pro v9
 Dark theme · Dynamic pill width · Khớp PS
+═══════════════════════════════════════════
+Nâng cấp từ v8:
+  - Shadow blur 5px (thay vì 0)
+  - Font size 27.0 (PS 20.5pt@96DPI)
+  - Bóng sản phẩm (product shadow)
+  - Bottom gradient option
+  - Auto top_margin
+  - Supersampled text+pill
+  - White canvas base
 """
 from __future__ import annotations
 import io, json, time, zipfile
@@ -16,16 +25,16 @@ from image_processor import (
 )
 from auth import require_login, logout_btn
 
-# ═══ HẰNG SỐ (khớp PS) ═══
-SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 90
+# ═══ HẰNG SỐ (khớp PS — v9) ═══
+SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 5, 90       # Fix #3: blur 5
 FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 26
 DEFAULT_FONT_FAMILY = "Montserrat-Bold"
-DEFAULT_FONT_SIZE = 22.2
+DEFAULT_FONT_SIZE = 27.0                                          # Fix #7: PS 20.5pt@96DPI
 PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 14
 MAX_PILL_RIGHT = 520
 MAX_UPLOAD_DIM, MAX_UPLOAD_MB, MIN_SRC_DIM = 1600, 20, 400
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
-APP_VERSION = "8.0"
+APP_VERSION = "9.0"
 
 def _fallback_bg(sz=600):
     bg = Image.new("RGBA",(sz,sz),(255,255,255,255))
@@ -77,14 +86,14 @@ def _bg():
         except: pass
     return _fallback_bg()
 
-# ═══ PRESETS ═══
+# ═══ PRESETS (Fix #7: font_size 27.0) ═══
 PRESETS = {
-    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=55,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=22.2),
-    "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=22.2),
-    "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=22.2),
-    "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=22.2),
-    "👕 Thời trang":      dict(top_margin=155,bottom_margin=45,side_padding=35,product_scale=1.05,center_mode="bbox",font_size=22.2),
-    "📱 ĐT dọc":          dict(top_margin=160,bottom_margin=50,side_padding=70,product_scale=1.0,center_mode="bbox",font_size=22.2),
+    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=55,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=27.0),
+    "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=27.0),
+    "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=27.0),
+    "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=27.0),
+    "👕 Thời trang":      dict(top_margin=155,bottom_margin=45,side_padding=35,product_scale=1.05,center_mode="bbox",font_size=27.0),
+    "📱 ĐT dọc":          dict(top_margin=160,bottom_margin=50,side_padding=70,product_scale=1.0,center_mode="bbox",font_size=27.0),
 }
 
 def _init():
@@ -156,7 +165,7 @@ def _eff_df():
 def _cfg(pid=None):
     g={k:st.session_state.get(f"cfg_{k}",v) for k,v in [
         ("top_margin",155),("bottom_margin",55),("side_padding",40),
-        ("product_scale",1.0),("center_mode","centroid"),("font_size",22.2)]}
+        ("product_scale",1.0),("center_mode","centroid"),("font_size",27.0)]}
     ov=st.session_state.get("overrides",{}).get(pid or "",{})
     for k in g:
         if ov.get(k) is not None: g[k]=ov[k]
@@ -170,6 +179,13 @@ def _cfg(pid=None):
         max_pill_right=MAX_PILL_RIGHT,
         shadow_offset_x=SHADOW_X,shadow_offset_y=SHADOW_Y,shadow_blur=SHADOW_BLUR,shadow_opacity=SHADOW_OP,
         font_family=st.session_state.get("cfg_font_family",DEFAULT_FONT_FAMILY),
+        # Fix #2: bóng sản phẩm
+        product_shadow=st.session_state.get("product_shadow",True),
+        product_shadow_opacity=28,
+        product_shadow_blur=12,
+        # Fix #6: gradient đáy
+        bottom_gradient=st.session_state.get("bottom_gradient",False),
+        bottom_gradient_strength=0.07,
     )
 
 def _validate():
@@ -203,7 +219,7 @@ def _empty(icon,msg):
 # ═══ SIDEBAR ═══
 with st.sidebar:
     st.markdown("### 🖼️ Thumbnail Builder")
-    st.caption(f"v{APP_VERSION} · Dark · Dynamic Pill")
+    st.caption(f"v{APP_VERSION} · Dark · SS4× · Shadow Blur")
     st.divider()
 
     st.markdown("**🎨 Preset**")
@@ -229,11 +245,16 @@ with st.sidebar:
         di=fl.index("Montserrat-Bold") if "Montserrat-Bold" in fl else 0
         st.selectbox("Loại chữ",fl,index=di,key="cfg_font_family")
     except: st.session_state["cfg_font_family"]=DEFAULT_FONT_FAMILY
-    st.number_input("Kích thước",9.0,40.0,key="cfg_font_size",step=0.5,format="%.1f")
+    st.number_input("Kích thước",9.0,50.0,key="cfg_font_size",step=0.5,format="%.1f")
+
+    st.divider()
+    st.markdown("**🎨 Hiệu ứng**")
+    st.toggle("🔲 Bóng sản phẩm",key="product_shadow",value=True)
+    st.toggle("🌫️ Gradient đáy",key="bottom_gradient",value=False)
+    st.toggle("🧹 Tách nền trắng",key="remove_bg")
 
     st.divider()
     st.markdown("**📤 Xuất**")
-    st.toggle("Tách nền trắng",key="remove_bg")
     out_fmt=st.selectbox("Format",["PNG","JPG","WEBP"])
     jpg_q=st.slider("Quality",70,100,92) if out_fmt in ("JPG","WEBP") else 92
 
@@ -257,7 +278,7 @@ with st.sidebar:
 c1,c2,c3,c4=st.columns([3,1,1,1])
 with c1:
     st.markdown("### 🖼️ Thumbnail Builder Pro")
-    st.caption("Dynamic pill · Montserrat Bold (PS 20.5pt) · Dark theme")
+    st.caption("SS4× pill+text · Montserrat Bold (PS 20.5pt→27px) · Product shadow")
 df=st.session_state.get("df"); mapping=st.session_state.get("mapping",{})
 ov_count=sum(1 for p in mapping if any(k for k in st.session_state.get("overrides",{}).get(p,{}) if k not in ("t1","t2")))
 with c2: st.metric("📋 Excel",len(df) if df is not None else 0)
@@ -396,10 +417,10 @@ with tab4:
                     cs=ov.get("side_padding",st.session_state.get("cfg_side_padding",40))
                     csc=ov.get("product_scale",st.session_state.get("cfg_product_scale",1.0))
                     cc=ov.get("center_mode",st.session_state.get("cfg_center_mode","centroid"))
-                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",22.2))
+                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",27.0))
                     c1,c2=st.columns(2)
                     with c1: nt=st.number_input("Trên",0,300,int(ct),5,key=f"ot_{pid}"); ns=st.number_input("Side",0,100,int(cs),5,key=f"os_{pid}"); nsc=st.number_input("Zoom",0.5,1.5,float(csc),0.05,format="%.2f",key=f"oz_{pid}")
-                    with c2: nb=st.number_input("Dưới",0,250,int(cb),5,key=f"ob_{pid}"); nf=st.number_input("Font",9.0,40.0,float(cf),0.5,format="%.1f",key=f"of_{pid}"); nc=st.radio("Căn",["centroid","bbox"],index=0 if cc=="centroid" else 1,horizontal=True,key=f"oc_{pid}",format_func=lambda x:"TT" if x=="centroid" else "BBox")
+                    with c2: nb=st.number_input("Dưới",0,250,int(cb),5,key=f"ob_{pid}"); nf=st.number_input("Font",9.0,50.0,float(cf),0.5,format="%.1f",key=f"of_{pid}"); nc=st.radio("Căn",["centroid","bbox"],index=0 if cc=="centroid" else 1,horizontal=True,key=f"oc_{pid}",format_func=lambda x:"TT" if x=="centroid" else "BBox")
                     c1,c2=st.columns(2)
                     with c1:
                         if st.button("💾 Lưu",type="primary",use_container_width=True):
