@@ -24,9 +24,9 @@ from auth import require_login, logout_btn
 SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 60
 FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 12
 DEFAULT_FONT_FAMILY = "Montserrat-Bold"
-DEFAULT_FONT_SIZE = 32.0       # PS 24pt × (96/72) = 32px
-DEFAULT_TRACKING = 25          # ĐÃ SỬA THÀNH SỐ DƯƠNG ĐỂ CHỮ GIÃN THOÁNG RA
-PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 14
+DEFAULT_FONT_SIZE = 34.0       # PS 24pt × (96/72) = 32px
+DEFAULT_TRACKING = 29.5          # ĐÃ SỬA THÀNH SỐ DƯƠNG ĐỂ CHỮ GIÃN THOÁNG RA
+PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 14, 14
 MAX_PILL_RIGHT = 520
 MAX_UPLOAD_DIM, MAX_UPLOAD_MB, MIN_SRC_DIM = 1600, 20, 400
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
@@ -84,7 +84,7 @@ def _bg():
 
 # ═══ PRESETS ═══
 PRESETS = {
-    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=55,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=32.0),
+    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=35,side_padding=35,product_scale=1.0,center_mode="centroid",font_size=34.0),
     "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=32.0),
     "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=32.0),
     "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=32.0),
