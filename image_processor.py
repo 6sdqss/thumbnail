@@ -24,19 +24,19 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 # ════ HẰNG SỐ ════
 CANVAS_SIZE = 600
 DEFAULT_TOP_MARGIN = 155
-DEFAULT_BOTTOM_MARGIN = 55
+DEFAULT_BOTTOM_MARGIN = 35
 DEFAULT_SIDE_PADDING = 40
 
 # Fix #9: PS 24pt × (96DPI / 72DPI) = 32px Pillow
-DEFAULT_FONT_SIZE = 32.0
-DEFAULT_TEXT_PADDING = 26     # khớp PS X=46 - pill_left=20
+DEFAULT_FONT_SIZE = 36.0
+DEFAULT_TEXT_PADDING = 29.5     # khớp PS X=46 - pill_left=20
 
 # Fix #8: PS Tracking -28 (đơn vị 1/1000 em)
 DEFAULT_TRACKING = -48
 
 PILL_LEFT      = 20
 PILL_HEIGHT    = 49           # FIX CỨNG từ asset gốc
-PILL1_TOP      = 15           # từ asset gốc
+PILL1_TOP      = 14           # từ asset gốc
 PILL2_GAP      = 14           # 78-64 = 14 (từ asset)
 MAX_PILL_RIGHT = 520          # pill không vượt quá x=520
 MIN_PILL_WIDTH = 100          # pill tối thiểu 100px
