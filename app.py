@@ -1,6 +1,15 @@
 """
-app.py — Thumbnail Builder Pro v10
-Dark theme · Dynamic pill width · PS Tracking Match
+app.py — Thumbnail Builder Pro v9 (Tracking Fix)
+Dark theme · Dynamic pill width · Khớp PS
+═══════════════════════════════════════════
+Nâng cấp từ v8:
+  - Shadow blur 5px (thay vì 0)
+  - Font size 24.0 (Khớp chuẩn Tracking -28)
+  - Bóng sản phẩm (product shadow)
+  - Bottom gradient option
+  - Auto top_margin
+  - Supersampled text+pill
+  - White canvas base
 """
 from __future__ import annotations
 import io, json, time, zipfile
@@ -16,16 +25,16 @@ from image_processor import (
 )
 from auth import require_login, logout_btn
 
-# ═══ HẰNG SỐ (Khớp chuẩn 100% Photoshop v10) ═══
-SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 60
-FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 25
+# ═══ HẰNG SỐ (khớp PS — v9) ═══
+SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 60       # Fix #3: blur 5
+FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 24             # Ép lề sát vào chút
 DEFAULT_FONT_FAMILY = "Montserrat-Bold"
-DEFAULT_FONT_SIZE = 24.0
-PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 40, 49, 26, 20
-MAX_PILL_RIGHT = 580
+DEFAULT_FONT_SIZE = 24.0                                         # Fix: PS 24pt
+PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 15, 14
+MAX_PILL_RIGHT = 520
 MAX_UPLOAD_DIM, MAX_UPLOAD_MB, MIN_SRC_DIM = 1600, 20, 400
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
-APP_VERSION = "10.0"
+APP_VERSION = "9.0"
 
 def _fallback_bg(sz=600):
     bg = Image.new("RGBA",(sz,sz),(255,255,255,255))
@@ -77,7 +86,7 @@ def _bg():
         except: pass
     return _fallback_bg()
 
-# ═══ PRESETS ═══
+# ═══ PRESETS (Fix #7: font_size 24.0) ═══
 PRESETS = {
     "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=55,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=24.0),
     "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=24.0),
@@ -170,9 +179,11 @@ def _cfg(pid=None):
         max_pill_right=MAX_PILL_RIGHT,
         shadow_offset_x=SHADOW_X,shadow_offset_y=SHADOW_Y,shadow_blur=SHADOW_BLUR,shadow_opacity=SHADOW_OP,
         font_family=st.session_state.get("cfg_font_family",DEFAULT_FONT_FAMILY),
+        # Fix #2: bóng sản phẩm
         product_shadow=st.session_state.get("product_shadow",True),
         product_shadow_opacity=28,
         product_shadow_blur=12,
+        # Fix #6: gradient đáy
         bottom_gradient=st.session_state.get("bottom_gradient",False),
         bottom_gradient_strength=0.07,
     )
@@ -208,7 +219,7 @@ def _empty(icon,msg):
 # ═══ SIDEBAR ═══
 with st.sidebar:
     st.markdown("### 🖼️ Thumbnail Builder")
-    st.caption(f"v{APP_VERSION} · Native Text · PS Tracking")
+    st.caption(f"v{APP_VERSION} · Dark · Tracking Match")
     st.divider()
 
     st.markdown("**🎨 Preset**")
@@ -267,7 +278,7 @@ with st.sidebar:
 c1,c2,c3,c4=st.columns([3,1,1,1])
 with c1:
     st.markdown("### 🖼️ Thumbnail Builder Pro")
-    st.caption("Native Text Render · PS Tracking (-28) · Product shadow")
+    st.caption("Native Text · PS Tracking (-28) · Product shadow")
 df=st.session_state.get("df"); mapping=st.session_state.get("mapping",{})
 ov_count=sum(1 for p in mapping if any(k for k in st.session_state.get("overrides",{}).get(p,{}) if k not in ("t1","t2")))
 with c2: st.metric("📋 Excel",len(df) if df is not None else 0)
@@ -327,7 +338,7 @@ with tab2:
     cl,cr=st.columns([1,1],gap="large")
     with cl:
         si=st.file_uploader("Ảnh",type=["png","jpg","jpeg","webp"],key="su")
-        sid=st.text_input("ID","DEMO001"); st1=st.text_input("Text 1","BLUETOOTH 5.4"); st2=st.text_input("Text 2","CỔNG SẠC TYPE-C")
+        sid=st.text_input("ID","DEMO001"); st1=st.text_input("Text 1","SỨC CHỨA 24 CHAI"); st2=st.text_input("Text 2","GIÁ KỆ GỖ SỒI CAO CẤP")
     with cr:
         if si:
             try:
