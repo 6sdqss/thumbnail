@@ -27,6 +27,7 @@ DEFAULT_FONT_FAMILY = "Montserrat-Bold"
 DEFAULT_FONT_SIZE = 27.5       # PS 24pt × (96/72) = 32px
 DEFAULT_TRACKING = 31.5        # ĐÃ SỬA THÀNH SỐ DƯƠNG ĐỂ CHỮ GIÃN THOÁNG RA
 PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 14, 14
+TEXT_Y_NUDGE = -2              # <--- CHỖ NÀY ĐỂ BẠN TỰ CHỈNH TEXT LÊN XUỐNG NÈ (-2 LÀ ĐẨY LÊN 2PX)
 MAX_PILL_RIGHT = 520
 MAX_UPLOAD_DIM, MAX_UPLOAD_MB, MIN_SRC_DIM = 1600, 20, 400
 SUPPORTED_SIZES = [300, 600, 800, 1000, 1200]
@@ -161,7 +162,7 @@ def _eff_df():
 def _cfg(pid=None):
     g={k:st.session_state.get(f"cfg_{k}",v) for k,v in [
         ("top_margin",155),("bottom_margin",55),("side_padding",40),
-        ("product_scale",1.0),("center_mode","centroid"),("font_size",32.0)]}
+        ("product_scale",1.0),("center_mode","centroid"),("font_size",27.5)]}
     ov=st.session_state.get("overrides",{}).get(pid or "",{})
     for k in g:
         if ov.get(k) is not None: g[k]=ov[k]
@@ -175,15 +176,11 @@ def _cfg(pid=None):
         max_pill_right=MAX_PILL_RIGHT,
         shadow_offset_x=SHADOW_X,shadow_offset_y=SHADOW_Y,shadow_blur=SHADOW_BLUR,shadow_opacity=SHADOW_OP,
         font_family=st.session_state.get("cfg_font_family",DEFAULT_FONT_FAMILY),
-        # Tracking (PS VA=-28)
         tracking=DEFAULT_TRACKING,
-        # KÉO CHỮ LÊN THÊM 2PX (Tổng là -4px) ĐỂ CANH GIỮA TUYỆT ĐỐI
-        text_y_nudge=-4,
-        # Bóng sản phẩm
+        text_y_nudge=TEXT_Y_NUDGE, # TRUYỀN VÀO IMAGE PROCESSOR
         product_shadow=st.session_state.get("product_shadow",True),
         product_shadow_opacity=28,
         product_shadow_blur=12,
-        # Gradient đáy
         bottom_gradient=st.session_state.get("bottom_gradient",False),
         bottom_gradient_strength=0.07,
     )
@@ -219,7 +216,7 @@ def _empty(icon,msg):
 # ═══ SIDEBAR ═══
 with st.sidebar:
     st.markdown("### 🖼️ Thumbnail Builder")
-    st.caption(f"v{APP_VERSION} · Tracking -28 · PS 24pt")
+    st.caption(f"v{APP_VERSION} · Tracking Match")
     st.divider()
 
     st.markdown("**🎨 Preset**")
@@ -278,7 +275,7 @@ with st.sidebar:
 c1,c2,c3,c4=st.columns([3,1,1,1])
 with c1:
     st.markdown("### 🖼️ Thumbnail Builder Pro")
-    st.caption("Montserrat Bold 24pt · Tracking -28 · SS4× pill · Product shadow")
+    st.caption("Montserrat Bold 27.5px · Dynamic Tracking · SS4× pill")
 df=st.session_state.get("df"); mapping=st.session_state.get("mapping",{})
 ov_count=sum(1 for p in mapping if any(k for k in st.session_state.get("overrides",{}).get(p,{}) if k not in ("t1","t2")))
 with c2: st.metric("📋 Excel",len(df) if df is not None else 0)
@@ -417,7 +414,7 @@ with tab4:
                     cs=ov.get("side_padding",st.session_state.get("cfg_side_padding",40))
                     csc=ov.get("product_scale",st.session_state.get("cfg_product_scale",1.0))
                     cc=ov.get("center_mode",st.session_state.get("cfg_center_mode","centroid"))
-                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",32.0))
+                    cf=ov.get("font_size",st.session_state.get("cfg_font_size",27.5))
                     c1,c2=st.columns(2)
                     with c1: nt=st.number_input("Trên",0,300,int(ct),5,key=f"ot_{pid}"); ns=st.number_input("Side",0,100,int(cs),5,key=f"os_{pid}"); nsc=st.number_input("Zoom",0.5,1.5,float(csc),0.05,format="%.2f",key=f"oz_{pid}")
                     with c2: nb=st.number_input("Dưới",0,250,int(cb),5,key=f"ob_{pid}"); nf=st.number_input("Font",9.0,50.0,float(cf),0.5,format="%.1f",key=f"of_{pid}"); nc=st.radio("Căn",["centroid","bbox"],index=0 if cc=="centroid" else 1,horizontal=True,key=f"oc_{pid}",format_func=lambda x:"TT" if x=="centroid" else "BBox")
