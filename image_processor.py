@@ -323,7 +323,7 @@ def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
         
         # FIXED: Tính tâm dọc tuyệt đối và dùng anchor="lm" bên trong _draw_text_tracked
         x = left + text_padding
-        center_y = top + (h / 2) - 2 # Trừ 2px để chữ cân tuyệt đối với khung
+        center_y = top + (h / 2) + 4 # CỘNG 4px ĐỂ HẠ CHỮ XUỐNG ĐÚNG VẠCH ĐỎ (BASELINE)
         
         # Vẽ từng ký tự với tracking
         _draw_text_tracked(draw, x, center_y, text, f, font_size, text_color, tracking)
