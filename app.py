@@ -22,10 +22,10 @@ from auth import require_login, logout_btn
 
 # ═══ HẰNG SỐ (khớp PS) ═══
 SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 60
-FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 16
+FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 18
 DEFAULT_FONT_FAMILY = "MontserratAlternates-Black"
 DEFAULT_FONT_SIZE = 31.5       # PS 24pt × (96/72) = 32px
-DEFAULT_TRACKING = 19.0        # ĐÃ SỬA THÀNH SỐ DƯƠNG ĐỂ CHỮ GIÃN THOÁNG RA
+DEFAULT_TRACKING = 20.0        # ĐÃ SỬA THÀNH SỐ DƯƠNG ĐỂ CHỮ GIÃN THOÁNG RA
 PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 14, 14
 TEXT_Y_NUDGE = 1              # <--- CHỖ NÀY ĐỂ BẠN TỰ CHỈNH TEXT LÊN XUỐNG NÈ (-2 LÀ ĐẨY LÊN 2PX)
 MAX_PILL_RIGHT = 520
