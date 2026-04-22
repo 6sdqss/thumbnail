@@ -23,7 +23,7 @@ from auth import require_login, logout_btn
 # ═══ HẰNG SỐ (khớp PS) ═══
 SHADOW_X, SHADOW_Y, SHADOW_BLUR, SHADOW_OP = 3, 4, 0, 60
 FONT_WEIGHT = 700; WHITE_TOL = 18; TEXT_PADDING = 12
-DEFAULT_FONT_FAMILY = "Montserrat-Bold"
+DEFAULT_FONT_FAMILY = "Montserrat-Black"
 DEFAULT_FONT_SIZE = 27.5       # PS 24pt × (96/72) = 32px
 DEFAULT_TRACKING = 31.5        # ĐÃ SỬA THÀNH SỐ DƯƠNG ĐỂ CHỮ GIÃN THOÁNG RA
 PILL_LEFT, PILL_HEIGHT, PILL1_TOP, PILL2_GAP = 20, 49, 14, 14
