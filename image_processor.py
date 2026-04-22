@@ -225,17 +225,19 @@ def _measure_width_tracked(text: str, font: ImageFont.FreeTypeFont,
 def _draw_text_tracked(draw: ImageDraw.ImageDraw, x: float, y: float,
                        text: str, font: ImageFont.FreeTypeFont,
                        font_size: float, fill, tracking_em: int):
-    """Vẽ text từng ký tự với tracking offset (giống PS VA=-28).
+    """Vẽ text từng ký tự với tracking offset (giãn chữ).
     Nếu tracking=0 → vẽ nguyên khối như bình thường."""
     if not text:
         return
     if tracking_em == 0:
-        draw.text((x, y), text, font=font, fill=fill)
+        # FIXED: Đã cập nhật anchor="lm" chống xệ chữ
+        draw.text((x, y), text, font=font, fill=fill, anchor="lm")
         return
     tk = _tracking_px(font_size, tracking_em)
     cx = float(x)
     for i, ch in enumerate(text):
-        draw.text((cx, y), ch, font=font, fill=fill)
+        # FIXED: Đã cập nhật anchor="lm" chống xệ chữ
+        draw.text((cx, y), ch, font=font, fill=fill, anchor="lm")
         cx += font.getlength(ch)
         if i < len(text) - 1:
             cx += tk
@@ -318,12 +320,13 @@ def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
     if text:
         draw = ImageDraw.Draw(canvas)
         f = load_font(font_size, font_weight, font_family)
-        # Vertical centering giống v8 (_measure + y_off)
-        tw, th, y_off = _measure(draw, text, f)
+        
+        # FIXED: Tính tâm dọc tuyệt đối và dùng anchor="lm" bên trong _draw_text_tracked
         x = left + text_padding
-        y = top + (h - th) // 2 - y_off
+        center_y = top + (h / 2) - 2 # Trừ 2px để chữ cân tuyệt đối với khung
+        
         # Vẽ từng ký tự với tracking
-        _draw_text_tracked(draw, x, y, text, f, font_size, text_color, tracking)
+        _draw_text_tracked(draw, x, center_y, text, f, font_size, text_color, tracking)
 
     return font_size
 
