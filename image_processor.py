@@ -28,8 +28,8 @@ DEFAULT_BOTTOM_MARGIN = 35
 DEFAULT_SIDE_PADDING = 40
 
 # Fix #9: PS 24pt × (96DPI / 72DPI) = 32px Pillow
-DEFAULT_FONT_SIZE = 28.5
-DEFAULT_TEXT_PADDING = 31.5     # khớp PS X=46 - pill_left=20
+DEFAULT_FONT_SIZE = 29.0
+DEFAULT_TEXT_PADDING = 30.5     # khớp PS X=46 - pill_left=20
 
 # Fix #8: PS Tracking -28 (đơn vị 1/1000 em)
 DEFAULT_TRACKING = -48
