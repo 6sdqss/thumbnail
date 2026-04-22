@@ -177,8 +177,8 @@ def _cfg(pid=None):
         font_family=st.session_state.get("cfg_font_family",DEFAULT_FONT_FAMILY),
         # Tracking (PS VA=-28)
         tracking=DEFAULT_TRACKING,
-        # Kéo chữ lên cao 2px (Dùng số âm để đẩy ngược lên trên)
-        text_y_nudge=-2,
+        # KÉO CHỮ LÊN THÊM 2PX (Tổng là -4px) ĐỂ CANH GIỮA TUYỆT ĐỐI
+        text_y_nudge=-4,
         # Bóng sản phẩm
         product_shadow=st.session_state.get("product_shadow",True),
         product_shadow_opacity=28,
