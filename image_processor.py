@@ -230,13 +230,11 @@ def _draw_text_tracked(draw: ImageDraw.ImageDraw, x: float, y: float,
     if not text:
         return
     if tracking_em == 0:
-        # FIXED: Đã cập nhật anchor="lm" chống xệ chữ
         draw.text((x, y), text, font=font, fill=fill, anchor="lm")
         return
     tk = _tracking_px(font_size, tracking_em)
     cx = float(x)
     for i, ch in enumerate(text):
-        # FIXED: Đã cập nhật anchor="lm" chống xệ chữ
         draw.text((cx, y), ch, font=font, fill=fill, anchor="lm")
         cx += font.getlength(ch)
         if i < len(text) - 1:
@@ -279,7 +277,7 @@ def draw_pill_with_shadow(canvas, pill_box, shadow_offset=(3,4), shadow_blur=5,
 def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
                           font_family=None, text_color=(0,0,0), text_padding=24,
                           shadow_offset=(2,3), shadow_blur=0, shadow_opacity=50,
-                          fill_color=(255,255,255), tracking=-28):
+                          fill_color=(255,255,255), tracking=-28, text_y_nudge=0):
     """
     Pill supersampled 4× cho viền mịn.
     Text vẽ 1× từng ký tự với tracking (Fix #8).
@@ -322,13 +320,10 @@ def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
         f = load_font(font_size, font_weight, font_family)
         
         x = left + text_padding
-        # SỬA LỖI: Vì hàm _draw_text_tracked đang dùng anchor="lm" (Căn theo tâm dọc),
-        # nên tọa độ y chỉ cần là điểm chính giữa của khung (h/2).
-        # Cộng thêm 2px để hạ chữ xuống đúng vạch baseline (có thể sửa thành +3, +4 tùy ý)
-        y = top + (h / 2) + 2
+        center_y = top + (h / 2) + text_y_nudge
         
         # Vẽ từng ký tự với tracking
-        _draw_text_tracked(draw, x, y, text, f, font_size, text_color, tracking)
+        _draw_text_tracked(draw, x, center_y, text, f, font_size, text_color, tracking)
 
     return font_size
 
@@ -473,6 +468,8 @@ class ThumbnailConfig:
     font_family: Optional[str] = None
     # Fix #8: Tracking (PS VA, đơn vị 1/1000 em, mặc định -28)
     tracking: int = DEFAULT_TRACKING
+    # Text Y Nudge
+    text_y_nudge: int = 0
     # Fix #2: bóng sản phẩm
     product_shadow: bool = True
     product_shadow_opacity: int = 28
@@ -482,7 +479,7 @@ class ThumbnailConfig:
     bottom_gradient_strength: float = 0.07
 
 
-# ════ BUILD THUMBNAIL (nâng cấp v9) ════
+# ════ BUILD THUMBNAIL ════
 def build_thumbnail(product_image, text1, text2, background, config):
     W = H = CANVAS_SIZE
     info = {}
@@ -490,7 +487,6 @@ def build_thumbnail(product_image, text1, text2, background, config):
     # ── Fix #1: Canvas TRẮNG ──
     bg = Image.new("RGBA", (W, H), (255, 255, 255, 255))
 
-    # Composite background lên trên (nếu bg có bo góc → trắng lộ thay vì đen)
     if config.show_background:
         bg_layer = background.convert("RGBA").resize((W, H), Image.LANCZOS)
         bg.alpha_composite(bg_layer)
@@ -499,7 +495,7 @@ def build_thumbnail(product_image, text1, text2, background, config):
     if config.bottom_gradient:
         apply_bottom_gradient(bg, darken_amount=config.bottom_gradient_strength)
 
-    # ── Fix #5: Auto-adjust top_margin ──
+    # ── Fix #5: Auto top_margin ──
     t1 = (text1 or "").strip()
     t2 = (text2 or "").strip()
 
@@ -509,11 +505,10 @@ def build_thumbnail(product_image, text1, text2, background, config):
     if t2:
         pill_area_bottom = config.pill1_top + config.pill_height + config.pill2_gap + config.pill_height
 
-    # Đảm bảo sản phẩm không đè lên pill (cách ít nhất 20px)
     min_top = pill_area_bottom + 20 if pill_area_bottom > 0 else 0
     effective_top = max(config.top_margin, min_top)
 
-    # ── Sản phẩm (giữ nguyên logic v8) ──
+    # ── Sản phẩm ──
     prod = product_image.convert("RGBA")
     if config.remove_bg_mode == "white":
         prod = remove_white_background(prod, config.white_tolerance)
@@ -534,19 +529,19 @@ def build_thumbnail(product_image, text1, text2, background, config):
     px = (W - fitted.width) // 2
     py = area_top + (area_h - fitted.height) // 2
 
-    # ── Fix #2: Bóng sản phẩm (vẽ TRƯỚC sản phẩm) ──
+    # ── Fix #2: Bóng sản phẩm ──
     if config.product_shadow:
         draw_product_shadow(bg, fitted, px, py, W, H,
                             opacity=config.product_shadow_opacity,
                             blur_radius=config.product_shadow_blur)
 
-    # Paste sản phẩm
     bg.paste(fitted, (px, py), fitted)
 
-    # ── Pill + Text — Fix #3 + Fix #4: supersampled cùng nhau ──
+    # ── Pill + Text — với tracking ──
     sizes_used = []
     sh_off = (config.shadow_offset_x, config.shadow_offset_y)
     tk = config.tracking
+    nudge = config.text_y_nudge
 
     if t1:
         pill1, sz1 = calc_dynamic_pill(
@@ -558,7 +553,7 @@ def build_thumbnail(product_image, text1, text2, background, config):
             bg, t1, pill1, sz1, config.font_weight,
             config.font_family, config.text_color, config.text_padding,
             sh_off, config.shadow_blur, config.shadow_opacity,
-            tracking=tk,
+            tracking=tk, text_y_nudge=nudge
         )
         sizes_used.append(round(sz1, 2))
 
@@ -573,7 +568,7 @@ def build_thumbnail(product_image, text1, text2, background, config):
             bg, t2, pill2, sz2, config.font_weight,
             config.font_family, config.text_color, config.text_padding,
             sh_off, config.shadow_blur, config.shadow_opacity,
-            tracking=tk,
+            tracking=tk, text_y_nudge=nudge
         )
         sizes_used.append(round(sz2, 2))
 
@@ -585,7 +580,7 @@ def build_thumbnail(product_image, text1, text2, background, config):
     return bg.convert("RGB"), info
 
 
-# ════ TIỆN ÍCH (giữ nguyên v8) ════
+# ════ TIỆN ÍCH ════
 def pil_to_bytes(img, fmt="PNG", quality=95):
     buf = io.BytesIO()
     if fmt.upper() in ("JPEG","JPG"):
