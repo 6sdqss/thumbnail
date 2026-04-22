@@ -32,7 +32,7 @@ DEFAULT_FONT_SIZE = 32.0
 DEFAULT_TEXT_PADDING = 26     # khớp PS X=46 - pill_left=20
 
 # Fix #8: PS Tracking -28 (đơn vị 1/1000 em)
-DEFAULT_TRACKING = -28
+DEFAULT_TRACKING = -48
 
 PILL_LEFT      = 20
 PILL_HEIGHT    = 49           # FIX CỨNG từ asset gốc
