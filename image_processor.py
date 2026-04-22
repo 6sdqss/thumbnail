@@ -1,9 +1,14 @@
 """
-image_processor.py v10
+image_processor.py v9
 ═════════════════════
-Nâng cấp từ v9:
-  Fix #8: Native Text Rendering (Vẽ chữ trực tiếp 1x, giữ nguyên độ nét, không làm nhòe chữ do supersampling)
-  Fix #9: PS Tracking Match (Hỗ trợ ép khoảng cách chữ -28 y hệt Photoshop bằng thuật toán vẽ từng ký tự)
+Nâng cấp từ v8:
+  Fix #1: White canvas base — xoá lỗi góc tối khi bg có bo tròn
+  Fix #2: Product shadow — bóng elip mờ dưới chân sản phẩm (DMX style)
+  Fix #3: Pill shadow blur — kích hoạt blur 5px cho shadow pill
+  Fix #4: Native Text + PS Tracking — Vẽ text gốc ở 1x (chống mờ) và ép chữ theo Tracking -28
+  Fix #5: Auto top_margin — tự đẩy sản phẩm xuống nếu pill che
+  Fix #6: Bottom gradient — gradient nhẹ đáy canvas (floor effect)
+  Fix #7: Font size PS 24pt
 """
 from __future__ import annotations
 
@@ -18,24 +23,24 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-# ════ HẰNG SỐ (Khớp chuẩn 100% Photoshop v10) ════
+# ════ HẰNG SỐ ════
 CANVAS_SIZE = 600
 DEFAULT_TOP_MARGIN = 155
 DEFAULT_BOTTOM_MARGIN = 55
 DEFAULT_SIDE_PADDING = 40
 
-DEFAULT_FONT_SIZE = 24.0      
-DEFAULT_TEXT_PADDING = 25     
+DEFAULT_FONT_SIZE = 24.0      # Khớp font size chuẩn 24
+DEFAULT_TEXT_PADDING = 24     
 
-PILL_LEFT      = 40           
+PILL_LEFT      = 20
 PILL_HEIGHT    = 49           
-PILL1_TOP      = 26           
-PILL2_GAP      = 20           
-MAX_PILL_RIGHT = 580          
+PILL1_TOP      = 15           
+PILL2_GAP      = 14           
+MAX_PILL_RIGHT = 520          
 MIN_PILL_WIDTH = 100          
 
 
-# ════ SMART FIT ════
+# ════ SMART FIT (giữ nguyên v8) ════
 def _content_bbox(img, alpha_threshold=10):
     if img.mode != "RGBA": return img.getbbox()
     alpha = np.array(img.split()[-1])
@@ -81,7 +86,7 @@ def smart_fit_centroid(img, target_w, target_h):
     return canvas
 
 
-# ════ TÁCH NỀN TRẮNG ════
+# ════ TÁCH NỀN TRẮNG (giữ nguyên v8) ════
 def _edge_connected(mask):
     h, w = mask.shape
     visited = np.zeros_like(mask, dtype=bool)
@@ -128,7 +133,7 @@ def remove_background_ai(img):
 _REMBG_SESSION = None
 
 
-# ════ FONT ════
+# ════ FONT (giữ nguyên v8) ════
 def _font_dir(): return os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
 _FONT_CACHE: dict = {}
@@ -157,7 +162,7 @@ def list_available_fonts() -> Dict[str, str]:
             if "italic" in fn.lower() or fn.lower().startswith("ofl"): continue
             name = os.path.splitext(fn)[0].replace("-VariableFont_wght","")
             fonts[name] = os.path.join(fd, fn)
-    prio = ["Montserrat-ExtraBold","Montserrat-Black","Montserrat-Bold",
+    prio = ["Montserrat-Bold","Montserrat-Black",
             "MontserratAlternates-Black","MontserratAlternates-ExtraBold",
             "MontserratAlternates-Bold","MontserratAlternates-Medium",
             "MontserratAlternates-Regular","Montserrat"]
@@ -175,13 +180,7 @@ def load_font(size: float, weight: int = 700, font_family: Optional[str] = None)
     if font_family:
         af = list_available_fonts()
         if font_family in af: cands.append(af[font_family])
-        else:
-            cands.append(os.path.join(_font_dir(), f"{font_family}.otf"))
-            cands.append(os.path.join(_font_dir(), f"{font_family}.ttf"))
-            
     cands.append(os.path.join(_font_dir(), "Montserrat.ttf"))
-    cands.append(os.path.join(_font_dir(), "Montserrat.otf"))
-    
     dl = _download_montserrat()
     if dl: cands.append(dl)
     cands += ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -197,6 +196,44 @@ def load_font(size: float, weight: int = 700, font_family: Optional[str] = None)
                 _FONT_CACHE[key] = f; return f
             except: continue
     f = ImageFont.load_default(); _FONT_CACHE[key] = f; return f
+
+
+# ════ PILL VỚI SHADOW — Fix #3: blur thực sự hoạt động ════
+def draw_pill_with_shadow(canvas, pill_box, shadow_offset=(3,4), shadow_blur=5,
+                          shadow_opacity=90, fill_color=(255,255,255)):
+    """Vẽ pill + shadow. Supersampling 4× cho viền nét.
+    Fix #3: shadow_blur giờ thực sự áp dụng GaussianBlur."""
+    SS = 4
+    left, top, right, bottom = pill_box
+    w, h = right-left, bottom-top
+    radius = h // 2
+    sx, sy = shadow_offset
+
+    # Tăng margin cho blur spread
+    blur_extra = (shadow_blur + 2) if shadow_blur > 0 else 0
+    margin = max(abs(sx), abs(sy)) + blur_extra + 4
+    lw, lh = w + margin*2, h + margin*2
+
+    # 1. Vẽ shadow trên layer (SS scale)
+    layer = Image.new("RGBA", (lw*SS, lh*SS), (0,0,0,0))
+    d = ImageDraw.Draw(layer)
+    d.rounded_rectangle(
+        [(margin+sx)*SS, (margin+sy)*SS, (margin+sx+w)*SS, (margin+sy+h)*SS],
+        radius=radius*SS, fill=(0,0,0,shadow_opacity))
+
+    # 2. Áp dụng blur cho shadow (Fix #3)
+    if shadow_blur > 0:
+        layer = layer.filter(ImageFilter.GaussianBlur(shadow_blur * SS))
+
+    # 3. Vẽ pill trắng lên trên shadow đã blur
+    d2 = ImageDraw.Draw(layer)
+    d2.rounded_rectangle(
+        [margin*SS, margin*SS, (margin+w)*SS, (margin+h)*SS],
+        radius=radius*SS, fill=(*fill_color, 255))
+
+    # 4. Downscale
+    layer = layer.resize((lw, lh), Image.LANCZOS)
+    canvas.alpha_composite(layer, (left-margin, top-margin))
 
 
 # ════ BÓNG SẢN PHẨM & GRADIENT ════
@@ -236,22 +273,18 @@ def apply_bottom_gradient(canvas, start_ratio=0.78, darken_amount=0.07):
     canvas.paste(Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA"))
 
 
-# ════ ĐO TEXT CÓ ÉP TRACKING (Mô phỏng khoảng cách PS) ════
+# ════ FIX: TÍNH TOÁN & VẼ CHỮ ÉP TRACKING NATIVE 1X ════
 def measure_text_width(text: str, font_size: float, font_weight: int = 700,
                        font_family: Optional[str] = None, tracking: int = -28) -> float:
-    """Đo chiều rộng chuẩn xác bằng textlength, cộng thêm khoảng cách Tracking"""
     if not text: return 0.0
     tmp = Image.new("RGBA", (1,1))
     d = ImageDraw.Draw(tmp)
     f = load_font(font_size, font_weight, font_family)
     
-    # Chuyển đổi Tracking (-28) sang pixel
     spacing = (font_size * tracking) / 1000.0
-    
     total_width = sum(d.textlength(ch, font=f) for ch in text)
     if len(text) > 1:
         total_width += spacing * (len(text) - 1)
-        
     return total_width
 
 def calc_dynamic_pill(text: str, font_size: float, font_weight: int,
@@ -280,16 +313,12 @@ def calc_dynamic_pill(text: str, font_size: float, font_weight: int,
     box = (pill_left, pill_top, pill_right, pill_top + pill_height)
     return box, used
 
-
-# ════ VẼ KHUNG SUPERSAMPLED + VẼ CHỮ NATIVE 1X TỪNG KÝ TỰ ════
-def draw_pill_ss_and_text_native(canvas, text, pill_box, font_size, font_weight=700,
-                                 font_family=None, text_color=(0,0,0), text_padding=25,
-                                 shadow_offset=(2,3), shadow_blur=0, shadow_opacity=50,
-                                 fill_color=(255,255,255), text_y_nudge=-2, tracking=-28):
-    """
-    Phần 1: Vẽ khung trắng và bóng ở tỷ lệ 4x để bo viền siêu nét.
-    Phần 2: Vẽ chữ ở tỷ lệ thật 1x, vẽ từng ký tự để ép lùi Tracking (-28).
-    """
+def draw_pill_and_text_ss(canvas, text, pill_box, font_size, font_weight=700,
+                          font_family=None, text_color=(0,0,0), text_padding=24,
+                          shadow_offset=(2,3), shadow_blur=0, shadow_opacity=50,
+                          fill_color=(255,255,255), text_y_nudge=-2, tracking=-28):
+    """Vẽ pill mịn (4x) và Text sắc nét (1x) từng ký tự"""
+    # 1. Vẽ khung trắng và bóng ở tỷ lệ 4x
     SS = 4
     left, top, right, bottom = pill_box
     w, h = right-left, bottom-top
@@ -300,7 +329,6 @@ def draw_pill_ss_and_text_native(canvas, text, pill_box, font_size, font_weight=
     margin = max(abs(sx), abs(sy)) + blur_extra + 4
     lw, lh = w + margin*2, h + margin*2
 
-    # 1. Vẽ Khung ở SS4x
     layer = Image.new("RGBA", (lw*SS, lh*SS), (0,0,0,0))
     d = ImageDraw.Draw(layer)
     d.rounded_rectangle(
@@ -318,12 +346,10 @@ def draw_pill_ss_and_text_native(canvas, text, pill_box, font_size, font_weight=
     layer = layer.resize((lw, lh), Image.LANCZOS)
     canvas.alpha_composite(layer, (left-margin, top-margin))
 
-    # 2. Vẽ Text Native 1x (Từng ký tự để ép Tracking)
+    # 2. Vẽ Text Native 1x từng ký tự
     if text:
         draw = ImageDraw.Draw(canvas)
         font_native = load_font(font_size, font_weight, font_family)
-        
-        # Đổi tracking sang pixel
         spacing = (font_size * tracking) / 1000.0
         
         tx = left + text_padding
@@ -332,9 +358,7 @@ def draw_pill_ss_and_text_native(canvas, text, pill_box, font_size, font_weight=
         
         current_x = tx
         for char in text:
-            # Dùng anchor "lm" (Left-Middle) để cố định tâm Y chống xệ chữ
             draw.text((current_x, final_text_y), char, font=font_native, fill=text_color, anchor="lm")
-            # Tịnh tiến tọa độ X và ép lùi lại bằng khoảng cách spacing (-0.67px)
             current_x += draw.textlength(char, font=font_native) + spacing
 
     return font_size
@@ -347,7 +371,7 @@ class ThumbnailConfig:
     bottom_margin: int = DEFAULT_BOTTOM_MARGIN
     side_padding: int = DEFAULT_SIDE_PADDING
     font_size: float = DEFAULT_FONT_SIZE
-    font_weight: int = 800
+    font_weight: int = 700
     text_color: Tuple[int,int,int] = (0,0,0)
     text_padding: int = DEFAULT_TEXT_PADDING
     remove_bg_mode: str = "none"
@@ -355,22 +379,22 @@ class ThumbnailConfig:
     show_background: bool = True
     center_mode: str = "centroid"
     product_scale: float = 1.0
-    
+    # Pill layout
     pill_left: int = PILL_LEFT
     pill_height: int = PILL_HEIGHT
     pill1_top: int = PILL1_TOP
     pill2_gap: int = PILL2_GAP
     max_pill_right: int = MAX_PILL_RIGHT
-    
+    # Shadow
     shadow_offset_x: int = 3
     shadow_offset_y: int = 4
-    shadow_blur: int = 0         
-    shadow_opacity: int = 60
-    
-    font_family: Optional[str] = "Montserrat-ExtraBold"
+    shadow_blur: int = 5
+    shadow_opacity: int = 90
+    # Font & Nudge
+    font_family: Optional[str] = None
     text_y_nudge: int = -2       
-    text_tracking: int = -28     # <-- Tính năng mô phỏng khoảng cách chữ Photoshop
-    
+    text_tracking: int = -28
+    # Bóng sản phẩm & Gradient đáy
     product_shadow: bool = True
     product_shadow_opacity: int = 28
     product_shadow_blur: int = 12
@@ -378,7 +402,7 @@ class ThumbnailConfig:
     bottom_gradient_strength: float = 0.07
 
 
-# ════ BUILD THUMBNAIL ════
+# ════ BUILD THUMBNAIL (nâng cấp v9) ════
 def build_thumbnail(product_image, text1, text2, background, config):
     W = H = CANVAS_SIZE
     info = {}
@@ -437,11 +461,10 @@ def build_thumbnail(product_image, text1, text2, background, config):
             config.text_padding, config.pill_left, config.pill1_top,
             config.pill_height, config.max_pill_right, config.text_tracking
         )
-        draw_pill_ss_and_text_native(
+        draw_pill_and_text_ss(
             bg, t1, pill1, sz1, config.font_weight,
             config.font_family, config.text_color, config.text_padding,
-            sh_off, config.shadow_blur, config.shadow_opacity, 
-            fill_color=(255,255,255), text_y_nudge=config.text_y_nudge, tracking=config.text_tracking
+            sh_off, config.shadow_blur, config.shadow_opacity, fill_color=(255,255,255), text_y_nudge=config.text_y_nudge, tracking=config.text_tracking
         )
         sizes_used.append(round(sz1, 2))
 
@@ -452,11 +475,10 @@ def build_thumbnail(product_image, text1, text2, background, config):
             config.text_padding, config.pill_left, pill2_top,
             config.pill_height, config.max_pill_right, config.text_tracking
         )
-        draw_pill_ss_and_text_native(
+        draw_pill_and_text_ss(
             bg, t2, pill2, sz2, config.font_weight,
             config.font_family, config.text_color, config.text_padding,
-            sh_off, config.shadow_blur, config.shadow_opacity, 
-            fill_color=(255,255,255), text_y_nudge=config.text_y_nudge, tracking=config.text_tracking
+            sh_off, config.shadow_blur, config.shadow_opacity, fill_color=(255,255,255), text_y_nudge=config.text_y_nudge, tracking=config.text_tracking
         )
         sizes_used.append(round(sz2, 2))
 
