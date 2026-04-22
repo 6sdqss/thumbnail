@@ -85,7 +85,7 @@ def _bg():
 
 # ═══ PRESETS ═══
 PRESETS = {
-    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=35,side_padding=35,product_scale=1.0,center_mode="centroid",font_size=29.5),
+    "🎯 Chuẩn (PS mẫu)": dict(top_margin=155,bottom_margin=35,side_padding=35,product_scale=1.0,center_mode="centroid",font_size=29.0),
     "🍳 Đồ gia dụng":    dict(top_margin=170,bottom_margin=50,side_padding=50,product_scale=1.1,center_mode="centroid",font_size=32.0),
     "🎧 Điện tử":        dict(top_margin=160,bottom_margin=60,side_padding=40,product_scale=1.0,center_mode="centroid",font_size=32.0),
     "🧴 Mỹ phẩm":        dict(top_margin=155,bottom_margin=55,side_padding=60,product_scale=0.95,center_mode="bbox",font_size=32.0),
